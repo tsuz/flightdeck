@@ -1,0 +1,148 @@
+.mon-tab {
+  display: flex;
+  height: 100%;
+}
+
+/* ── Sidebar ── */
+.mon-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.mon-sidebar-header {
+  padding: 12px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mon-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 16px;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.mon-sidebar-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.mon-sidebar-item.active {
+  background: var(--bg-tertiary);
+  border-left-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mon-sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+
+/* Category checkboxes */
+.mon-category-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.mon-category-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.mon-category-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.mon-category-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mon-category-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-category-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+/* ── Main area ── */
+.mon-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.mon-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mon-main-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mon-main-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── Chart ── */
+.mon-chart-container {
+  position: relative;
+  height: 400px;
+  padding: 16px;
+}
+
+.mon-chart-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mon-chart-tooltip {
+  position: absolute;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: monospace;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  z-index: 10;
+}

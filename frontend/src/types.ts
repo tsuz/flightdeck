@@ -5,24 +5,45 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-export interface ExecutionRequest {
-  id: string;
-  userMessage: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  toolCalls: ToolCall[];
-  response?: string;
-  createdAt: string;
-  completedAt?: string;
-}
-
-export interface ToolCall {
+export interface ToolUseBlock {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  result?: string;
+}
+
+export interface ToolExecution {
+  toolUseId: string;
+  name: string;
+  input: Record<string, unknown>;
   status: "pending" | "running" | "completed" | "failed";
+  result?: string;
   startedAt: string;
   completedAt?: string;
+}
+
+export interface StepCost {
+  inputTokens?: number;
+  outputTokens?: number;
+  dollars: number;
+}
+
+export interface PipelineStep {
+  id: string;
+  type: "user_request" | "llm_query" | "llm_response" | "tool_execution" | "user_response";
+  timestamp: string;
+  status: "pending" | "processing" | "completed" | "failed" | "retrying";
+  latencyMs?: number;
+  cost?: StepCost;
+  retryOf?: string;
+  payload: unknown;
+}
+
+export interface Conversation {
+  id: string;
+  userMessage: string;
+  createdAt: string;
+  maxCostDollars: number;
+  steps: PipelineStep[];
 }
 
 export interface LogEntry {
@@ -34,9 +55,9 @@ export interface LogEntry {
   timestamp: string;
 }
 
-export type Tab = "chat" | "execution" | "logs";
+export type Tab = "chat" | "execution" | "monitoring" | "logs";
 
 export type WsMessage =
   | { type: "chat_response"; data: ChatMessage }
-  | { type: "execution_update"; data: ExecutionRequest }
+  | { type: "conversation_update"; data: Conversation }
   | { type: "log"; data: LogEntry };

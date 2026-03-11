@@ -3,23 +3,25 @@ import type { Tab } from "./types";
 import { useWebSocket } from "./useWebSocket";
 import { ChatTab } from "./tabs/ChatTab";
 import { ExecutionTab } from "./tabs/ExecutionTab";
+import { MonitoringTab } from "./tabs/MonitoringTab";
 import { LogsTab } from "./tabs/LogsTab";
 import "./App.css";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "chat", label: "Chat" },
   { key: "execution", label: "Execution" },
+  { key: "monitoring", label: "Monitoring" },
   { key: "logs", label: "Logs" },
 ];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
-  const { connected, messages, executions, logs, sendMessage } = useWebSocket();
+  const { connected, messages, conversations, logs, thinking, sendMessage } = useWebSocket();
 
   return (
     <div className="app">
       <header className="header">
-        <h1 className="header-title">FlightDeck Dashboard</h1>
+        <h1 className="header-title">Dashboard</h1>
         <span className={`status-badge ${connected ? "connected" : "disconnected"}`}>
           {connected ? "Connected" : "Disconnected"}
         </span>
@@ -33,8 +35,8 @@ export default function App() {
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
-            {tab.key === "execution" && executions.length > 0 && (
-              <span className="tab-badge">{executions.length}</span>
+            {tab.key === "execution" && conversations.length > 0 && (
+              <span className="tab-badge">{conversations.length}</span>
             )}
             {tab.key === "logs" && logs.length > 0 && (
               <span className="tab-badge">{logs.length}</span>
@@ -45,9 +47,10 @@ export default function App() {
 
       <main className="content">
         {activeTab === "chat" && (
-          <ChatTab messages={messages} onSend={sendMessage} />
+          <ChatTab messages={messages} thinking={thinking} onSend={sendMessage} />
         )}
-        {activeTab === "execution" && <ExecutionTab executions={executions} />}
+        {activeTab === "execution" && <ExecutionTab conversations={conversations} />}
+        {activeTab === "monitoring" && <MonitoringTab conversations={conversations} />}
         {activeTab === "logs" && <LogsTab logs={logs} />}
       </main>
     </div>

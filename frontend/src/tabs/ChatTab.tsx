@@ -4,16 +4,17 @@ import "./ChatTab.css";
 
 interface Props {
   messages: ChatMessage[];
+  thinking: boolean;
   onSend: (content: string) => void;
 }
 
-export function ChatTab({ messages, onSend }: Props) {
+export function ChatTab({ messages, thinking, onSend }: Props) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, thinking]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +27,7 @@ export function ChatTab({ messages, onSend }: Props) {
   return (
     <div className="chat-tab">
       <div className="chat-messages">
-        {messages.length === 0 && (
+        {messages.length === 0 && !thinking && (
           <div className="chat-empty">
             <p>Send a message to start a conversation with the AI agent.</p>
           </div>
@@ -40,6 +41,16 @@ export function ChatTab({ messages, onSend }: Props) {
             </div>
           </div>
         ))}
+        {thinking && (
+          <div className="chat-bubble assistant">
+            <div className="chat-role">Agent</div>
+            <div className="chat-thinking">
+              <span className="chat-thinking-dot" />
+              <span className="chat-thinking-dot" />
+              <span className="chat-thinking-dot" />
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 

@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.FullMessageContext;
 import io.axon.streams.model.MessageContext;
 import io.axon.streams.serdes.JsonSerde;
@@ -20,7 +20,7 @@ import java.util.List;
  *
  * <p>Implements the <em>"Join"</em> node in the architecture diagram — the
  * step labelled <em>"Join historical conversation with latest input"</em>
- * that sits between {@code message-input} and {@code full-message-context}.
+ * that sits between {@code message-input} and {@code enriched-message-input}.
  *
  * <h3>Topology</h3>
  * <pre>
@@ -30,7 +30,7 @@ import java.util.List;
  *         │◄──────────────  message-context  (KTable — accumulated history)
  *         │
  *         ▼
- *   full-message-context  (KStream — history + latest input, consumed by Think)
+ *   enriched-message-input  (KStream — history + latest input, consumed by Think)
  * </pre>
  *
  * <h3>Why a left join?</h3>
@@ -60,9 +60,9 @@ public class EnrichInputMessageProcessor {
     public static void register(StreamsBuilder builder) {
 
         // ── Left side: incoming user messages ────────────────────────────────
-        KStream<String, AgentMessage> inputStream = builder.stream(
+        KStream<String, MessageInput> inputStream = builder.stream(
                 Topics.MESSAGE_INPUT,
-                Consumed.with(Serdes.String(), JsonSerde.of(AgentMessage.class))
+                Consumed.with(Serdes.String(), JsonSerde.of(MessageInput.class))
         );
 
         // ── Right side: conversation history KTable (built by AccumulateSessionContextProcessor)
@@ -81,9 +81,10 @@ public class EnrichInputMessageProcessor {
                 .leftJoin(
                         contextTable,
                         EnrichInputMessageProcessor::enrich,
+                        // TODO consider time window
                         Joined.with(
                                 Serdes.String(),
-                                JsonSerde.of(AgentMessage.class),
+                                JsonSerde.of(MessageInput.class),
                                 JsonSerde.of(MessageContext.class)
                         )
                 )
@@ -92,7 +93,7 @@ public class EnrichInputMessageProcessor {
                                 sessionId,
                                 full.history().size(),
                                 full.history().isEmpty()))
-                .to(Topics.FULL_SESSION_CONTEXT,
+                .to(Topics.ENRICHED_MESSAGE_INPUT,
                         Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
     }
 
@@ -101,7 +102,7 @@ public class EnrichInputMessageProcessor {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Merges an incoming {@link AgentMessage} with the session's current
+     * Merges an incoming {@link MessageInput} with the session's current
      * {@link MessageContext} (which may be {@code null} on the first turn).
      *
      * <p>Rules:
@@ -113,8 +114,8 @@ public class EnrichInputMessageProcessor {
      *       canonical key for this record.</li>
      * </ul>
      */
-    static FullMessageContext enrich(AgentMessage message, MessageContext context) {
-        List<AgentMessage> history = (context != null && context.history() != null)
+    static FullMessageContext enrich(MessageInput message, MessageContext context) {
+        List<MessageInput> history = (context != null && context.history() != null)
                 ? context.history()
                 : List.of();
 

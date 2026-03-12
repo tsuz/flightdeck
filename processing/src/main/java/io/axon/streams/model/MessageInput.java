@@ -10,7 +10,7 @@ import java.util.Map;
  * Represents a single turn from any participant: user, assistant, or tool.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record AgentMessage(
+public record MessageInput(
         @JsonProperty("session_id") String sessionId,
         @JsonProperty("user_id")    String userId,
         @JsonProperty("role")       String role,       // "user" | "assistant" | "tool"

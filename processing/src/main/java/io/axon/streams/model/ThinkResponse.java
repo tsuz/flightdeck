@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The full response from the LLM (Claude API) after processing a
- * {@code full-message-context}.  May contain zero or more tool-use blocks.
+ * {@code enriched-message-input}.  May contain zero or more tool-use blocks.
  * Published onto {@code think-request-response}.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -17,7 +17,7 @@ public record ThinkResponse(
         @JsonProperty("cost")          double cost,
         @JsonProperty("input_tokens")  int inputTokens,
         @JsonProperty("output_tokens") int outputTokens,
-        @JsonProperty("messages")      List<AgentMessage> messages,
+        @JsonProperty("messages")      List<MessageInput> messages,
         @JsonProperty("tool_uses")     List<ToolUseItem> toolUses,
         @JsonProperty("end_turn")      boolean endTurn,
         @JsonProperty("timestamp")     String timestamp

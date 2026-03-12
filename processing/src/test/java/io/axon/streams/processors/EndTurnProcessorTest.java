@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.model.ToolUseItem;
 import io.axon.streams.model.UserResponse;
@@ -140,7 +140,7 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("sourceAgent is read from message metadata when present")
     void sourceAgent_fromMetadata() {
-        AgentMessage msgWithAgent = new AgentMessage("sess-7", "u", ROLE_ASSISTANT,
+        MessageInput msgWithAgent = new MessageInput("sess-7", "u", ROLE_ASSISTANT,
                 "Hello", TS, Map.of("agent", "agent-2"));
         thinkInput.pipeInput("sess-7", endTurnResponse("sess-7", "u",
                 List.of(msgWithAgent), List.of()));
@@ -153,14 +153,14 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("assembleContent: single assistant message returns its content")
     void assembleContent_single() {
-        List<AgentMessage> messages = List.of(assistantMsg("s", "u", "Hello world"));
+        List<MessageInput> messages = List.of(assistantMsg("s", "u", "Hello world"));
         assertThat(assembleContent(messages)).isEqualTo("Hello world");
     }
 
     @Test
     @DisplayName("assembleContent: multiple assistant messages are joined with separator")
     void assembleContent_multiple() {
-        List<AgentMessage> messages = List.of(
+        List<MessageInput> messages = List.of(
                 assistantMsg("s", "u", "Part one."),
                 assistantMsg("s", "u", "Part two.")
         );
@@ -171,9 +171,9 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("assembleContent: non-assistant messages are excluded")
     void assembleContent_excludesNonAssistant() {
-        List<AgentMessage> messages = List.of(
-                new AgentMessage("s", "u", "user",   "User question",  TS, Map.of()),
-                new AgentMessage("s", "u", "tool",   "Tool result",    TS, Map.of()),
+        List<MessageInput> messages = List.of(
+                new MessageInput("s", "u", "user",   "User question",  TS, Map.of()),
+                new MessageInput("s", "u", "tool",   "Tool result",    TS, Map.of()),
                 assistantMsg("s", "u", "Assistant reply.")
         );
         assertThat(assembleContent(messages)).isEqualTo("Assistant reply.");
@@ -194,8 +194,8 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("assembleContent: list with only non-assistant messages returns empty string")
     void assembleContent_noAssistantMessages() {
-        List<AgentMessage> messages = List.of(
-                new AgentMessage("s", "u", "user", "Question", TS, Map.of())
+        List<MessageInput> messages = List.of(
+                new MessageInput("s", "u", "user", "Question", TS, Map.of())
         );
         assertThat(assembleContent(messages)).isEmpty();
     }
@@ -203,7 +203,7 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("assembleContent: blank assistant content is excluded")
     void assembleContent_blankContentExcluded() {
-        List<AgentMessage> messages = List.of(
+        List<MessageInput> messages = List.of(
                 assistantMsg("s", "u", "   "),          // blank — excluded
                 assistantMsg("s", "u", "Real content")  // kept
         );
@@ -216,7 +216,7 @@ class EndTurnProcessorTest {
     @DisplayName("toUserResponse: content is assembled from assistant messages only")
     void toUserResponse_contentFromAssistant() {
         ThinkResponse resp = endTurnResponse("s", "u", List.of(
-                new AgentMessage("s", "u", "user",      "Question",   TS, Map.of()),
+                new MessageInput("s", "u", "user",      "Question",   TS, Map.of()),
                 assistantMsg("s", "u", "The answer.")
         ), List.of());
 
@@ -239,13 +239,13 @@ class EndTurnProcessorTest {
     private static final String TS = "2026-03-10T12:00:00Z";
 
     private static ThinkResponse endTurnResponse(String sessionId, String userId,
-                                                  List<AgentMessage> messages,
+                                                  List<MessageInput> messages,
                                                   List<ToolUseItem> tools) {
         return endTurnResponse(sessionId, userId, messages, tools, 0.005, 150, 60);
     }
 
     private static ThinkResponse endTurnResponse(String sessionId, String userId,
-                                                  List<AgentMessage> messages,
+                                                  List<MessageInput> messages,
                                                   List<ToolUseItem> tools,
                                                   double cost, int inputTokens, int outputTokens) {
         return new ThinkResponse(sessionId, userId, cost, inputTokens, outputTokens,
@@ -253,13 +253,13 @@ class EndTurnProcessorTest {
     }
 
     private static ThinkResponse midTurnResponse(String sessionId, String userId,
-                                                   List<AgentMessage> messages,
+                                                   List<MessageInput> messages,
                                                    List<ToolUseItem> tools) {
         return new ThinkResponse(sessionId, userId, 0.005, 150, 60,
                 messages, tools, false, TS);
     }
 
-    private static AgentMessage assistantMsg(String sessionId, String userId, String content) {
-        return new AgentMessage(sessionId, userId, ROLE_ASSISTANT, content, TS, Map.of());
+    private static MessageInput assistantMsg(String sessionId, String userId, String content) {
+        return new MessageInput(sessionId, userId, ROLE_ASSISTANT, content, TS, Map.of());
     }
 }

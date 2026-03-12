@@ -19,7 +19,7 @@ class AccumulateSessionContextProcessorTest {
     private TopologyTestDriver driver;
     private TestInputTopic<String, ThinkResponse>      thinkInput;
     private TestOutputTopic<String, MessageContext>    contextOutput;
-    private TestInputTopic<String, AgentMessage>       messageInput;
+    private TestInputTopic<String, MessageInput>       messageInput;
     private TestOutputTopic<String, FullMessageContext> fullContextOutput;
 
     @BeforeEach
@@ -36,8 +36,8 @@ class AccumulateSessionContextProcessorTest {
         contextOutput    = driver.createOutputTopic(Topics.SESSION_CONTEXT,
                 Serdes.String().deserializer(), JsonSerde.of(MessageContext.class).deserializer());
         messageInput     = driver.createInputTopic(Topics.MESSAGE_INPUT,
-                Serdes.String().serializer(), JsonSerde.of(AgentMessage.class).serializer());
-        fullContextOutput = driver.createOutputTopic(Topics.FULL_SESSION_CONTEXT,
+                Serdes.String().serializer(), JsonSerde.of(MessageInput.class).serializer());
+        fullContextOutput = driver.createOutputTopic(Topics.ENRICHED_MESSAGE_INPUT,
                 Serdes.String().deserializer(), JsonSerde.of(FullMessageContext.class).deserializer());
     }
 
@@ -74,7 +74,7 @@ class AccumulateSessionContextProcessorTest {
         MessageContext latest = records.get(1).value();
         assertThat(latest.llmCalls()).isEqualTo(2);
         assertThat(latest.cost()).isCloseTo(0.08, within(0.0001));
-        assertThat(latest.history()).extracting(AgentMessage::content)
+        assertThat(latest.history()).extracting(MessageInput::content)
                 .containsExactly("First.", "Second.");
     }
 
@@ -148,7 +148,7 @@ class AccumulateSessionContextProcessorTest {
     @Test
     @DisplayName("appendMessages: null history is treated as empty")
     void appendMessages_nullHistory() {
-        List<AgentMessage> r = AccumulateSessionContextProcessor
+        List<MessageInput> r = AccumulateSessionContextProcessor
                 .appendMessages(null, List.of(userMsg("s","u","x")));
         assertThat(r).hasSize(1);
     }
@@ -156,7 +156,7 @@ class AccumulateSessionContextProcessorTest {
     @Test
     @DisplayName("appendMessages: null newMessages is treated as empty")
     void appendMessages_nullNew() {
-        List<AgentMessage> r = AccumulateSessionContextProcessor
+        List<MessageInput> r = AccumulateSessionContextProcessor
                 .appendMessages(List.of(userMsg("s","u","x")), null);
         assertThat(r).hasSize(1);
     }
@@ -181,15 +181,15 @@ class AccumulateSessionContextProcessorTest {
     private static final String TS = "2026-03-10T12:00:00Z";
 
     private static ThinkResponse thinkResp(String sid, String uid, double cost,
-                                           List<AgentMessage> msgs) {
+                                           List<MessageInput> msgs) {
         return new ThinkResponse(sid, uid, cost, 100, 50, msgs, List.of(), true, TS);
     }
 
-    private static AgentMessage userMsg(String sid, String uid, String content) {
-        return new AgentMessage(sid, uid, "user", content, TS, Map.of());
+    private static MessageInput userMsg(String sid, String uid, String content) {
+        return new MessageInput(sid, uid, "user", content, TS, Map.of());
     }
 
-    private static AgentMessage assistantMsg(String sid, String uid, String content) {
-        return new AgentMessage(sid, uid, "assistant", content, TS, Map.of());
+    private static MessageInput assistantMsg(String sid, String uid, String content) {
+        return new MessageInput(sid, uid, "assistant", content, TS, Map.of());
     }
 }

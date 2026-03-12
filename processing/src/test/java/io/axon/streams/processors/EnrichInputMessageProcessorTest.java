@@ -22,14 +22,14 @@ import static org.assertj.core.api.Assertions.*;
  *       leftJoin
  *   message-context (KTable)
  *       ▼
- *   full-message-context (KStream)
+ *   enriched-message-input (KStream)
  */
 class EnrichInputMessageProcessorTest {
 
     private TopologyTestDriver driver;
 
     /** Drives raw user messages onto message-input */
-    private TestInputTopic<String, AgentMessage>   messageInput;
+    private TestInputTopic<String, MessageInput>   messageInput;
 
     /** Seeds the message-context KTable directly */
     private TestInputTopic<String, MessageContext>  contextInput;
@@ -51,7 +51,7 @@ class EnrichInputMessageProcessorTest {
         messageInput = driver.createInputTopic(
                 Topics.MESSAGE_INPUT,
                 Serdes.String().serializer(),
-                JsonSerde.of(AgentMessage.class).serializer());
+                JsonSerde.of(MessageInput.class).serializer());
 
         // Seed the KTable by writing directly to the message-context topic
         contextInput = driver.createInputTopic(
@@ -60,7 +60,7 @@ class EnrichInputMessageProcessorTest {
                 JsonSerde.of(MessageContext.class).serializer());
 
         fullContextOutput = driver.createOutputTopic(
-                Topics.FULL_SESSION_CONTEXT,
+                Topics.ENRICHED_MESSAGE_INPUT,
                 Serdes.String().deserializer(),
                 JsonSerde.of(FullMessageContext.class).deserializer());
     }
@@ -99,7 +99,7 @@ class EnrichInputMessageProcessorTest {
         FullMessageContext full = fullContextOutput.readRecord().value();
 
         assertThat(full.history()).hasSize(2);
-        assertThat(full.history()).extracting(AgentMessage::content)
+        assertThat(full.history()).extracting(MessageInput::content)
                 .containsExactly("First reply.", "Second reply.");
         assertThat(full.latestInput().content()).isEqualTo("Follow-up?");
     }
@@ -116,7 +116,7 @@ class EnrichInputMessageProcessorTest {
         assertThat(full.history()).hasSize(1);
         assertThat(full.latestInput().content()).isEqualTo("New question");
         // New question must NOT appear in history
-        assertThat(full.history()).extracting(AgentMessage::content)
+        assertThat(full.history()).extracting(MessageInput::content)
                 .doesNotContain("New question");
     }
 
@@ -145,7 +145,7 @@ class EnrichInputMessageProcessorTest {
     void userId_fallsBackToContext() {
         contextInput.pipeInput("sess-u2", context("sess-u2", "ctx-user", List.of()));
         // Message has null userId (e.g. scheduler-triggered input)
-        AgentMessage schedulerMsg = new AgentMessage("sess-u2", null, "user",
+        MessageInput schedulerMsg = new MessageInput("sess-u2", null, "user",
                 "Scheduled trigger", TS, Map.of());
         messageInput.pipeInput("sess-u2", schedulerMsg);
 
@@ -155,7 +155,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("userId is null when neither message nor context provides one")
     void userId_nullWhenNoSource() {
-        AgentMessage msg = new AgentMessage("sess-u3", null, "user", "hi", TS, Map.of());
+        MessageInput msg = new MessageInput("sess-u3", null, "user", "hi", TS, Map.of());
         messageInput.pipeInput("sess-u3", msg);
 
         assertThat(fullContextOutput.readRecord().value().userId()).isNull();
@@ -189,7 +189,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("enrich(): null context produces empty history")
     void enrich_nullContext_emptyHistory() {
-        AgentMessage msg = userMsg("s", "u", "hello");
+        MessageInput msg = userMsg("s", "u", "hello");
         FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, null);
         assertThat(result.history()).isEmpty();
         assertThat(result.latestInput()).isEqualTo(msg);
@@ -199,7 +199,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("enrich(): context with null history is treated as empty")
     void enrich_contextWithNullHistory() {
-        AgentMessage msg = userMsg("s", "u", "hello");
+        MessageInput msg = userMsg("s", "u", "hello");
         MessageContext ctx = new MessageContext("s", "u", 0, 0, List.of(), null, TS);
         FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
         assertThat(result.history()).isEmpty();
@@ -208,8 +208,8 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("enrich(): history from context is forwarded unchanged")
     void enrich_historyForwarded() {
-        AgentMessage msg = userMsg("s", "u", "new");
-        AgentMessage prior = assistantMsg("s", "u", "old");
+        MessageInput msg = userMsg("s", "u", "new");
+        MessageInput prior = assistantMsg("s", "u", "old");
         MessageContext ctx = context("s", "u", List.of(prior));
         FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
         assertThat(result.history()).containsExactly(prior);
@@ -219,7 +219,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("enrich(): userId prefers message over context")
     void enrich_userIdFromMessage() {
-        AgentMessage msg = userMsg("s", "msg-user", "hi");
+        MessageInput msg = userMsg("s", "msg-user", "hi");
         MessageContext ctx = context("s", "ctx-user", List.of());
         assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("msg-user");
     }
@@ -227,7 +227,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("enrich(): userId falls back to context when message userId is blank")
     void enrich_userIdFallback() {
-        AgentMessage msg = new AgentMessage("s", "  ", "user", "hi", TS, Map.of());
+        MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
         MessageContext ctx = context("s", "ctx-user", List.of());
         assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("ctx-user");
     }
@@ -236,16 +236,16 @@ class EnrichInputMessageProcessorTest {
 
     private static final String TS = "2026-03-10T12:00:00Z";
 
-    private static AgentMessage userMsg(String sessionId, String userId, String content) {
-        return new AgentMessage(sessionId, userId, "user", content, TS, Map.of());
+    private static MessageInput userMsg(String sessionId, String userId, String content) {
+        return new MessageInput(sessionId, userId, "user", content, TS, Map.of());
     }
 
-    private static AgentMessage assistantMsg(String sessionId, String userId, String content) {
-        return new AgentMessage(sessionId, userId, "assistant", content, TS, Map.of());
+    private static MessageInput assistantMsg(String sessionId, String userId, String content) {
+        return new MessageInput(sessionId, userId, "assistant", content, TS, Map.of());
     }
 
     private static MessageContext context(String sessionId, String userId,
-                                          List<AgentMessage> history) {
+                                          List<MessageInput> history) {
         return new MessageContext(sessionId, userId, 0.0, history.size(),
                 history.isEmpty() ? List.of() : List.of(history.get(history.size() - 1)),
                 history, TS);

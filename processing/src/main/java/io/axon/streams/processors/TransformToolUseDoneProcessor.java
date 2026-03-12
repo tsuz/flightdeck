@@ -2,7 +2,7 @@ package io.axon.streams.processors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.ToolResultAccumulator;
 import io.axon.streams.model.ToolUseResult;
 import io.axon.streams.serdes.JsonSerde;
@@ -27,13 +27,13 @@ import java.util.stream.Collectors;
  * <p>Implements the <em>"transform tool use all complete to message-input"</em>
  * node in the architecture diagram — the step that closes the agentic loop by
  * feeding all completed tool results back into {@code message-input} as a
- * single {@code tool}-role {@link AgentMessage}.
+ * single {@code tool}-role {@link MessageInput}.
  *
  * <h3>Topology</h3>
  * <pre>
  *   tool-use-all-complete  (KStream — ToolResultAccumulator)
  *         │
- *         ▼  mapValues: ToolResultAccumulator → AgentMessage (role="tool")
+ *         ▼  mapValues: ToolResultAccumulator → MessageInput (role="tool")
  *              ├─ content   : JSON array of { tool_use_id, name, result, status }
  *              ├─ role      : "tool"
  *              ├─ session_id: preserved
@@ -77,7 +77,7 @@ public class TransformToolUseDoneProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(TransformToolUseDoneProcessor.class);
 
-    /** Role tag written onto the synthesised AgentMessage. */
+    /** Role tag written onto the synthesised MessageInput. */
     static final String ROLE_TOOL = "tool";
 
     /** Metadata key under which the raw ToolUseResult list is stored. */
@@ -107,9 +107,9 @@ public class TransformToolUseDoneProcessor {
                     return true;
                 })
 
-                // ── Transform: ToolResultAccumulator → AgentMessage ───────────
+                // ── Transform: ToolResultAccumulator → MessageInput ───────────
                 .mapValues((sessionId, acc) -> {
-                    AgentMessage message = toAgentMessage(sessionId, acc);
+                    MessageInput message = toMessageInput(sessionId, acc);
                     log.info("[{}] Tool results transformed → message-input  tool_count={} role={}",
                             sessionId, acc.results().size(), ROLE_TOOL);
                     return message;
@@ -117,7 +117,7 @@ public class TransformToolUseDoneProcessor {
 
                 // ── Re-enter the pipeline via message-input ───────────────────
                 .to(Topics.MESSAGE_INPUT,
-                        Produced.with(Serdes.String(), JsonSerde.of(AgentMessage.class)));
+                        Produced.with(Serdes.String(), JsonSerde.of(MessageInput.class)));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -126,17 +126,17 @@ public class TransformToolUseDoneProcessor {
 
     /**
      * Converts a completed {@link ToolResultAccumulator} into an
-     * {@link AgentMessage} suitable for re-entering {@code message-input}.
+     * {@link MessageInput} suitable for re-entering {@code message-input}.
      *
      * <p>The {@code content} field is a JSON array of tool result summaries.
      * Serialisation failures fall back to a plain text representation so the
      * pipeline never stalls due to a serialisation error.
      */
-    static AgentMessage toAgentMessage(String sessionId, ToolResultAccumulator acc) {
+    static MessageInput toMessageInput(String sessionId, ToolResultAccumulator acc) {
         String content  = serializeResults(acc.results());
         Map<String, Object> metadata = buildMetadata(acc.results());
 
-        return new AgentMessage(
+        return new MessageInput(
                 sessionId,
                 acc.userId(),
                 ROLE_TOOL,
@@ -179,7 +179,7 @@ public class TransformToolUseDoneProcessor {
     }
 
     /**
-     * Builds the metadata map attached to the outbound {@link AgentMessage}.
+     * Builds the metadata map attached to the outbound {@link MessageInput}.
      * Stores the raw {@link ToolUseResult} list for structured downstream access
      * alongside summary counters.
      */

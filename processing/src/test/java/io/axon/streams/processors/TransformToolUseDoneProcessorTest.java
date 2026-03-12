@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.ToolResultAccumulator;
 import io.axon.streams.model.ToolUseResult;
 import io.axon.streams.serdes.JsonSerde;
@@ -21,7 +21,7 @@ class TransformToolUseDoneProcessorTest {
 
     private TopologyTestDriver driver;
     private TestInputTopic<String, ToolResultAccumulator> allCompleteInput;
-    private TestOutputTopic<String, AgentMessage>          messageOutput;
+    private TestOutputTopic<String, MessageInput>          messageOutput;
 
     @BeforeEach
     void setUp() {
@@ -42,7 +42,7 @@ class TransformToolUseDoneProcessorTest {
         messageOutput = driver.createOutputTopic(
                 Topics.MESSAGE_INPUT,
                 Serdes.String().deserializer(),
-                JsonSerde.of(AgentMessage.class).deserializer());
+                JsonSerde.of(MessageInput.class).deserializer());
     }
 
     @AfterEach
@@ -51,7 +51,7 @@ class TransformToolUseDoneProcessorTest {
     // ── Core routing ──────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("Completed accumulator produces one AgentMessage on message-input")
+    @DisplayName("Completed accumulator produces one MessageInput on message-input")
     void completedAccumulator_producesOneMessage() {
         allCompleteInput.pipeInput("sess-1", accumulator("sess-1", "user-A", List.of(
                 result("sess-1", "t1", "get_balance", Map.of("balance", 142.50))
@@ -70,10 +70,10 @@ class TransformToolUseDoneProcessorTest {
         assertThat(messageOutput.readRecord().key()).isEqualTo("sess-key");
     }
 
-    // ── AgentMessage fields ───────────────────────────────────────────────────
+    // ── MessageInput fields ───────────────────────────────────────────────────
 
     @Test
-    @DisplayName("Produced AgentMessage has role='tool'")
+    @DisplayName("Produced MessageInput has role='tool'")
     void agentMessage_roleIsTool() {
         allCompleteInput.pipeInput("sess-2", accumulator("sess-2", "u", List.of(
                 result("sess-2", "t1", "tool_a", Map.of()))));
@@ -82,12 +82,12 @@ class TransformToolUseDoneProcessorTest {
     }
 
     @Test
-    @DisplayName("Produced AgentMessage preserves session_id and user_id")
+    @DisplayName("Produced MessageInput preserves session_id and user_id")
     void agentMessage_sessionAndUserPreserved() {
         allCompleteInput.pipeInput("sess-3", accumulator("sess-3", "user-X", List.of(
                 result("sess-3", "t1", "tool_a", Map.of()))));
 
-        AgentMessage msg = messageOutput.readRecord().value();
+        MessageInput msg = messageOutput.readRecord().value();
         assertThat(msg.sessionId()).isEqualTo("sess-3");
         assertThat(msg.userId()).isEqualTo("user-X");
     }
@@ -234,32 +234,32 @@ class TransformToolUseDoneProcessorTest {
         assertThat(buildMetadata(results).get(META_TOOL_COUNT)).isEqualTo(2);
     }
 
-    // ── Pure function: toAgentMessage ─────────────────────────────────────────
+    // ── Pure function: toMessageInput ─────────────────────────────────────────
 
     @Test
-    @DisplayName("toAgentMessage: role is always 'tool'")
-    void toAgentMessage_role() {
+    @DisplayName("toMessageInput: role is always 'tool'")
+    void toMessageInput_role() {
         ToolResultAccumulator acc = accumulator("s", "u", List.of(
                 result("s", "t1", "tool_a", Map.of())));
-        assertThat(toAgentMessage("s", acc).role()).isEqualTo(ROLE_TOOL);
+        assertThat(toMessageInput("s", acc).role()).isEqualTo(ROLE_TOOL);
     }
 
     @Test
-    @DisplayName("toAgentMessage: sessionId and userId are carried over")
-    void toAgentMessage_ids() {
+    @DisplayName("toMessageInput: sessionId and userId are carried over")
+    void toMessageInput_ids() {
         ToolResultAccumulator acc = accumulator("my-sess", "my-user", List.of(
                 result("my-sess", "t1", "tool_a", Map.of())));
-        AgentMessage msg = toAgentMessage("my-sess", acc);
+        MessageInput msg = toMessageInput("my-sess", acc);
         assertThat(msg.sessionId()).isEqualTo("my-sess");
         assertThat(msg.userId()).isEqualTo("my-user");
     }
 
     @Test
-    @DisplayName("toAgentMessage: content is non-blank for non-empty results")
-    void toAgentMessage_contentNonBlank() {
+    @DisplayName("toMessageInput: content is non-blank for non-empty results")
+    void toMessageInput_contentNonBlank() {
         ToolResultAccumulator acc = accumulator("s", "u", List.of(
                 result("s", "t1", "tool_x", Map.of("k", "v"))));
-        assertThat(toAgentMessage("s", acc).content()).isNotBlank();
+        assertThat(toMessageInput("s", acc).content()).isNotBlank();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

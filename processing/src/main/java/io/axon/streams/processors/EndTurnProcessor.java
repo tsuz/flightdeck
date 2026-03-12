@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.model.UserResponse;
 import io.axon.streams.serdes.JsonSerde;
@@ -51,7 +51,7 @@ import java.util.stream.Collectors;
  * </ol>
  *
  * <h3>Content assembly</h3>
- * A single {@link ThinkResponse} can carry multiple {@link AgentMessage} entries
+ * A single {@link ThinkResponse} can carry multiple {@link MessageInput} entries
  * (e.g. a chain-of-thought block followed by the final answer).  Only messages
  * with {@code role == "assistant"} are concatenated into the outbound content;
  * internal reasoning or tool-result messages are stripped.
@@ -152,12 +152,12 @@ public class EndTurnProcessor {
      * Returns an empty string if the list is null, empty, or contains no
      * assistant messages.
      */
-    static String assembleContent(List<AgentMessage> messages) {
+    static String assembleContent(List<MessageInput> messages) {
         if (messages == null || messages.isEmpty()) return "";
 
         return messages.stream()
                 .filter(m -> ROLE_ASSISTANT.equals(m.role()))
-                .map(AgentMessage::content)
+                .map(MessageInput::content)
                 .filter(c -> c != null && !c.isBlank())
                 .collect(Collectors.joining(CONTENT_SEPARATOR));
     }

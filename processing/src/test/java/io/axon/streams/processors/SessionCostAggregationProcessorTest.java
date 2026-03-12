@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.SessionCost;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.model.ToolUseItem;

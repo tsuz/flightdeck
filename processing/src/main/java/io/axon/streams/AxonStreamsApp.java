@@ -1,9 +1,12 @@
 package io.axon.streams;
 
-import io.axon.streams.processors.AccumulateSessionContextProcessor;
+import io.axon.streams.processors.AggregateToolExecutionResultProcessor;
+
+import io.axon.streams.processors.EndTurnProcessor;
 import io.axon.streams.processors.EnrichInputMessageProcessor;
 import io.axon.streams.processors.ExtractToolUseItemsProcessor;
 import io.axon.streams.processors.SessionCostAggregationProcessor;
+import io.axon.streams.processors.TransformToolUseDoneProcessor;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
@@ -17,7 +20,7 @@ import java.util.Properties;
  * Entry-point: wires all processor fragments into a single Kafka Streams topology
  * and starts the application.
  *
- * As additional beige processors are implemented (AccumulateSessionContext,
+ * As additional beige processors are implemented (AccumulateMessageContext,
  * Think, ToolExecution, ToolResultAggregation, ToolLatencyAggregation) each
  * one is registered here with a single call.
  */
@@ -31,16 +34,31 @@ public class AxonStreamsApp {
 
         log.info("Topology description:\n{}", topology.describe());
 
-        try (KafkaStreams streams = new KafkaStreams(topology, props)) {
-            streams.setUncaughtExceptionHandler((e) -> {
-                log.error("Uncaught stream exception — shutting down", e);
-                return org.apache.kafka.streams.errors.StreamsUncaughtExceptionHandler
-                        .StreamThreadExceptionResponse.SHUTDOWN_APPLICATION;
-            });
+        KafkaStreams streams = new KafkaStreams(topology, props);
 
-            Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
-            streams.start();
-            log.info("Axon Streams started.");
+        // Latch keeps the main thread alive until SIGTERM / Ctrl-C
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+
+        streams.setUncaughtExceptionHandler((e) -> {
+            log.error("Uncaught stream exception — shutting down", e);
+            latch.countDown();
+            return org.apache.kafka.streams.errors.StreamsUncaughtExceptionHandler
+                    .StreamThreadExceptionResponse.SHUTDOWN_APPLICATION;
+        });
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.info("Shutdown signal received — closing streams.");
+            streams.close();
+            latch.countDown();
+        }));
+
+        streams.start();
+        log.info("Axon Streams started. Waiting for messages...");
+
+        try {
+            latch.await(); // blocks here until shutdown hook fires or uncaught exception
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -49,14 +67,16 @@ public class AxonStreamsApp {
         StreamsBuilder builder = new StreamsBuilder();
 
         // ── Register each beige processor fragment ───────────────────────────
-        ExtractToolUseItemsProcessor.register(builder);
-        AccumulateSessionContextProcessor.register(builder);
+        // ExtractToolUseItemsProcessor.register(builder);
+        // AccumulateMessageContextProcessor.register(builder);
         EnrichInputMessageProcessor.register(builder);
-        SessionCostAggregationProcessor.register(builder);
-        // ThinkProcessor.register(builder);                       // TODO
-        // ToolExecutionProcessor.register(builder);               // TODO
-        // ToolResultAggregationProcessor.register(builder);       // TODO
-        // ToolLatencyAggregationProcessor.register(builder);      // TODO
+        // SessionCostAggregationProcessor.register(builder);
+        // EndTurnProcessor.register(builder);
+        // AggregateToolExecutionResultProcessor.register(builder);
+        // TransformToolUseDoneProcessor.register(builder);
+        // AggregateToolLatencyProcessor.register(builder);
+        // ThinkProcessor.register(builder);        // TODO
+        // ToolExecutionProcessor.register(builder); // TODO
 
         return builder.build();
     }

@@ -20,8 +20,8 @@ public record MessageContext(
         @JsonProperty("user_id")    String userId,
         @JsonProperty("cost")       double cost,
         @JsonProperty("llm_calls")  int llmCalls,
-        @JsonProperty("messages")   List<AgentMessage> messages,  // latest turn only
-        @JsonProperty("history")    List<AgentMessage> history,   // full conversation
+        @JsonProperty("messages")   List<MessageInput> messages,  // latest turn only
+        @JsonProperty("history")    List<MessageInput> history,   // full conversation
         @JsonProperty("timestamp")  String timestamp
 ) {
     /** Empty context — used as the Kafka Streams aggregate initialiser. */

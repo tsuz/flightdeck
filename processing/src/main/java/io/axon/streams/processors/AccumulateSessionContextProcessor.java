@@ -1,7 +1,7 @@
 package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
-import io.axon.streams.model.AgentMessage;
+import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.FullMessageContext;
 import io.axon.streams.model.MessageContext;
 import io.axon.streams.model.ThinkResponse;
@@ -39,12 +39,12 @@ import java.util.List;
  * for that {@code session_id}, tracking full cost, LLM call count, and the
  * complete conversation history.
  *
- * <h3>Fragment 2 — Join (message-input ⋈ message-context → full-message-context)</h3>
+ * <h3>Fragment 2 — Join (message-input ⋈ message-context → enriched-message-input)</h3>
  * <pre>
  *   message-input (KStream)
  *       │
  *       ▼  leftJoin with message-context KTable
- *   full-message-context ──► consumed by Think processor
+ *   enriched-message-input ──► consumed by Think processor
  * </pre>
  * A left-join is used so that the very first user message of a brand-new session
  * (no history yet) still produces output with an empty history list, rather than
@@ -82,13 +82,13 @@ public class AccumulateSessionContextProcessor {
 
                         // Aggregator — append each ThinkResponse's messages into the history
                         (sessionId, response, current) -> {
-                            List<AgentMessage> updatedHistory = appendMessages(
+                            List<MessageInput> updatedHistory = appendMessages(
                                     current.history(), response.messages());
 
                             double updatedCost  = current.cost()     + response.cost();
                             int    updatedCalls = current.llmCalls() + 1;
 
-                            List<AgentMessage> latestMessages =
+                            List<MessageInput> latestMessages =
                                     response.messages() != null
                                     ? Collections.unmodifiableList(response.messages())
                                     : List.of();
@@ -137,9 +137,9 @@ public class AccumulateSessionContextProcessor {
     private static void registerJoin(StreamsBuilder builder,
                                      KTable<String, MessageContext> contextTable) {
 
-        KStream<String, AgentMessage> inputStream = builder.stream(
+        KStream<String, MessageInput> inputStream = builder.stream(
                 Topics.MESSAGE_INPUT,
-                Consumed.with(Serdes.String(), JsonSerde.of(AgentMessage.class))
+                Consumed.with(Serdes.String(), JsonSerde.of(MessageInput.class))
         );
 
         inputStream
@@ -147,7 +147,7 @@ public class AccumulateSessionContextProcessor {
                         contextTable,
                         (userMsg, ctx) -> {
                             // ctx is null on the very first turn of a new session
-                            List<AgentMessage> history =
+                            List<MessageInput> history =
                                     (ctx != null && ctx.history() != null)
                                     ? ctx.history()
                                     : List.of();
@@ -171,13 +171,13 @@ public class AccumulateSessionContextProcessor {
                         },
                         Joined.with(
                                 Serdes.String(),
-                                JsonSerde.of(AgentMessage.class),
+                                JsonSerde.of(MessageInput.class),
                                 JsonSerde.of(MessageContext.class)
                         )
                 )
                 .peek((sid, full) ->
-                        log.debug("[{}] → {}", sid, Topics.FULL_SESSION_CONTEXT))
-                .to(Topics.FULL_SESSION_CONTEXT,
+                        log.debug("[{}] → {}", sid, Topics.ENRICHED_MESSAGE_INPUT))
+                .to(Topics.ENRICHED_MESSAGE_INPUT,
                         Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
     }
 
@@ -189,11 +189,11 @@ public class AccumulateSessionContextProcessor {
      * Immutably appends {@code newMessages} after {@code history}.
      * Null-safe on both inputs.
      */
-    static List<AgentMessage> appendMessages(
-            List<AgentMessage> history,
-            List<AgentMessage> newMessages) {
+    static List<MessageInput> appendMessages(
+            List<MessageInput> history,
+            List<MessageInput> newMessages) {
 
-        List<AgentMessage> combined = new ArrayList<>();
+        List<MessageInput> combined = new ArrayList<>();
         if (history     != null) combined.addAll(history);
         if (newMessages != null) combined.addAll(newMessages);
         return Collections.unmodifiableList(combined);

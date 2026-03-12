@@ -14,10 +14,10 @@ public final class Topics {
 
     // ── Context building ─────────────────────────────────────────────────────
     /** Per-session accumulated conversation history (KTable backing store) */
-    public static final String MESSAGE_CONTEXT          = "message-context";
+    public static final String SESSION_CONTEXT           = "session-context";
 
     /** Merged: historical context + latest user message, ready for the LLM */
-    public static final String FULL_MESSAGE_CONTEXT     = "full-message-context";
+    public static final String FULL_SESSION_CONTEXT     = "full-session-context";
 
     // ── LLM reasoning ────────────────────────────────────────────────────────
     /** LLM (Claude) response including any tool-use blocks */

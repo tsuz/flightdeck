@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * Produced by the stream–table join in {@code AccumulateMessageContextProcessor}.
+ * Produced by the stream–table join in {@code AccumulateSessionContextProcessor}.
  * Combines the full conversation history from the {@code message-context} KTable
  * with the latest incoming user message from {@code message-input}.
  * Published onto {@code full-message-context} and consumed by the Think processor.

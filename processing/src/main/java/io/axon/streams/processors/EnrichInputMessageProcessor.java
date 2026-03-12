@@ -39,8 +39,8 @@ import java.util.List;
  * downstream with an empty history list rather than being silently dropped,
  * so the Think processor always receives something to act on.
  *
- * <h3>Relationship to AccumulateMessageContextProcessor</h3>
- * {@link AccumulateMessageContextProcessor} owns the KTable — it builds and
+ * <h3>Relationship to AccumulateSessionContextProcessor</h3>
+ * {@link AccumulateSessionContextProcessor} owns the KTable — it builds and
  * maintains {@code message-context} by aggregating {@link io.axon.streams.model.ThinkResponse}
  * records.  This processor is a pure read-side consumer of that table; it never
  * writes to it.  Keeping the two concerns separate mirrors the diagram topology
@@ -52,7 +52,7 @@ public class EnrichInputMessageProcessor {
 
     /**
      * Name of the local KTable store used on the join side.
-     * Distinct from {@link AccumulateMessageContextProcessor#MESSAGE_CONTEXT_STORE}
+     * Distinct from {@link AccumulateSessionContextProcessor#MESSAGE_CONTEXT_STORE}
      * so the two stores do not collide inside the same topology.
      */
     public static final String ENRICH_CONTEXT_STORE = "enrich-message-context-store";
@@ -65,10 +65,10 @@ public class EnrichInputMessageProcessor {
                 Consumed.with(Serdes.String(), JsonSerde.of(AgentMessage.class))
         );
 
-        // ── Right side: conversation history KTable (built by AccumulateMessageContextProcessor)
+        // ── Right side: conversation history KTable (built by AccumulateSessionContextProcessor)
         // Read the message-context topic as a KTable with its own local state store.
         KTable<String, MessageContext> contextTable = builder.table(
-                Topics.MESSAGE_CONTEXT,
+                Topics.SESSION_CONTEXT,
                 Consumed.with(Serdes.String(), JsonSerde.of(MessageContext.class)),
                 Materialized.<String, MessageContext>as(
                         Stores.persistentKeyValueStore(ENRICH_CONTEXT_STORE))
@@ -92,7 +92,7 @@ public class EnrichInputMessageProcessor {
                                 sessionId,
                                 full.history().size(),
                                 full.history().isEmpty()))
-                .to(Topics.FULL_MESSAGE_CONTEXT,
+                .to(Topics.FULL_SESSION_CONTEXT,
                         Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
     }
 

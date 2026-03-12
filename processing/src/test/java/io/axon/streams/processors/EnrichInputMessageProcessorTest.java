@@ -55,12 +55,12 @@ class EnrichInputMessageProcessorTest {
 
         // Seed the KTable by writing directly to the message-context topic
         contextInput = driver.createInputTopic(
-                Topics.MESSAGE_CONTEXT,
+                Topics.SESSION_CONTEXT,
                 Serdes.String().serializer(),
                 JsonSerde.of(MessageContext.class).serializer());
 
         fullContextOutput = driver.createOutputTopic(
-                Topics.FULL_MESSAGE_CONTEXT,
+                Topics.FULL_SESSION_CONTEXT,
                 Serdes.String().deserializer(),
                 JsonSerde.of(FullMessageContext.class).deserializer());
     }

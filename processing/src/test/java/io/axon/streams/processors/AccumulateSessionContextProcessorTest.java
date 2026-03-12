@@ -14,7 +14,7 @@ import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.*;
 
-class AccumulateMessageContextProcessorTest {
+class AccumulateSessionContextProcessorTest {
 
     private TopologyTestDriver driver;
     private TestInputTopic<String, ThinkResponse>      thinkInput;
@@ -25,7 +25,7 @@ class AccumulateMessageContextProcessorTest {
     @BeforeEach
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
-        AccumulateMessageContextProcessor.register(builder);
+        AccumulateSessionContextProcessor.register(builder);
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-accumulate");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:9092");
@@ -33,11 +33,11 @@ class AccumulateMessageContextProcessorTest {
 
         thinkInput       = driver.createInputTopic(Topics.THINK_REQUEST_RESPONSE,
                 Serdes.String().serializer(), JsonSerde.of(ThinkResponse.class).serializer());
-        contextOutput    = driver.createOutputTopic(Topics.MESSAGE_CONTEXT,
+        contextOutput    = driver.createOutputTopic(Topics.SESSION_CONTEXT,
                 Serdes.String().deserializer(), JsonSerde.of(MessageContext.class).deserializer());
         messageInput     = driver.createInputTopic(Topics.MESSAGE_INPUT,
                 Serdes.String().serializer(), JsonSerde.of(AgentMessage.class).serializer());
-        fullContextOutput = driver.createOutputTopic(Topics.FULL_MESSAGE_CONTEXT,
+        fullContextOutput = driver.createOutputTopic(Topics.FULL_SESSION_CONTEXT,
                 Serdes.String().deserializer(), JsonSerde.of(FullMessageContext.class).deserializer());
     }
 
@@ -148,7 +148,7 @@ class AccumulateMessageContextProcessorTest {
     @Test
     @DisplayName("appendMessages: null history is treated as empty")
     void appendMessages_nullHistory() {
-        List<AgentMessage> r = AccumulateMessageContextProcessor
+        List<AgentMessage> r = AccumulateSessionContextProcessor
                 .appendMessages(null, List.of(userMsg("s","u","x")));
         assertThat(r).hasSize(1);
     }
@@ -156,24 +156,24 @@ class AccumulateMessageContextProcessorTest {
     @Test
     @DisplayName("appendMessages: null newMessages is treated as empty")
     void appendMessages_nullNew() {
-        List<AgentMessage> r = AccumulateMessageContextProcessor
+        List<AgentMessage> r = AccumulateSessionContextProcessor
                 .appendMessages(List.of(userMsg("s","u","x")), null);
         assertThat(r).hasSize(1);
     }
 
     @Test @DisplayName("resolveUserId prefers incoming non-blank value")
     void resolveUserId_incoming() {
-        assertThat(AccumulateMessageContextProcessor.resolveUserId("old","new")).isEqualTo("new");
+        assertThat(AccumulateSessionContextProcessor.resolveUserId("old","new")).isEqualTo("new");
     }
 
     @Test @DisplayName("resolveUserId falls back to existing when incoming is null")
     void resolveUserId_null() {
-        assertThat(AccumulateMessageContextProcessor.resolveUserId("old", null)).isEqualTo("old");
+        assertThat(AccumulateSessionContextProcessor.resolveUserId("old", null)).isEqualTo("old");
     }
 
     @Test @DisplayName("resolveUserId falls back to existing when incoming is blank")
     void resolveUserId_blank() {
-        assertThat(AccumulateMessageContextProcessor.resolveUserId("old", "  ")).isEqualTo("old");
+        assertThat(AccumulateSessionContextProcessor.resolveUserId("old", "  ")).isEqualTo("old");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

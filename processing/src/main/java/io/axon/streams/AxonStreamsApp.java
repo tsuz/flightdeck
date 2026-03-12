@@ -1,6 +1,6 @@
 package io.axon.streams;
 
-import io.axon.streams.processors.AccumulateMessageContextProcessor;
+import io.axon.streams.processors.AccumulateSessionContextProcessor;
 import io.axon.streams.processors.EnrichInputMessageProcessor;
 import io.axon.streams.processors.ExtractToolUseItemsProcessor;
 import io.axon.streams.processors.SessionCostAggregationProcessor;
@@ -17,7 +17,7 @@ import java.util.Properties;
  * Entry-point: wires all processor fragments into a single Kafka Streams topology
  * and starts the application.
  *
- * As additional beige processors are implemented (AccumulateMessageContext,
+ * As additional beige processors are implemented (AccumulateSessionContext,
  * Think, ToolExecution, ToolResultAggregation, ToolLatencyAggregation) each
  * one is registered here with a single call.
  */
@@ -50,7 +50,7 @@ public class AxonStreamsApp {
 
         // ── Register each beige processor fragment ───────────────────────────
         ExtractToolUseItemsProcessor.register(builder);
-        AccumulateMessageContextProcessor.register(builder);
+        AccumulateSessionContextProcessor.register(builder);
         EnrichInputMessageProcessor.register(builder);
         SessionCostAggregationProcessor.register(builder);
         // ThinkProcessor.register(builder);                       // TODO

@@ -50,9 +50,9 @@ import java.util.List;
  * (no history yet) still produces output with an empty history list, rather than
  * being silently dropped.
  */
-public class AccumulateMessageContextProcessor {
+public class AccumulateSessionContextProcessor {
 
-    private static final Logger log = LoggerFactory.getLogger(AccumulateMessageContextProcessor.class);
+    private static final Logger log = LoggerFactory.getLogger(AccumulateSessionContextProcessor.class);
 
     /** Name of the persistent RocksDB state store backing the context KTable. */
     public static final String MESSAGE_CONTEXT_STORE      = "message-context-store";
@@ -122,9 +122,9 @@ public class AccumulateMessageContextProcessor {
         contextTable
                 .toStream()
                 .peek((sid, ctx) -> log.debug("[{}] → {} history_size={}",
-                        sid, Topics.MESSAGE_CONTEXT,
+                        sid, Topics.SESSION_CONTEXT,
                         ctx != null ? ctx.history().size() : 0))
-                .to(Topics.MESSAGE_CONTEXT,
+                .to(Topics.SESSION_CONTEXT,
                         Produced.with(Serdes.String(), JsonSerde.of(MessageContext.class)));
 
         return contextTable;
@@ -176,8 +176,8 @@ public class AccumulateMessageContextProcessor {
                         )
                 )
                 .peek((sid, full) ->
-                        log.debug("[{}] → {}", sid, Topics.FULL_MESSAGE_CONTEXT))
-                .to(Topics.FULL_MESSAGE_CONTEXT,
+                        log.debug("[{}] → {}", sid, Topics.FULL_SESSION_CONTEXT))
+                .to(Topics.FULL_SESSION_CONTEXT,
                         Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
     }
 

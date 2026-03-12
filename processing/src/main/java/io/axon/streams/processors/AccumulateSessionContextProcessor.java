@@ -2,8 +2,8 @@ package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
 import io.axon.streams.model.MessageInput;
-import io.axon.streams.model.FullMessageContext;
-import io.axon.streams.model.MessageContext;
+import io.axon.streams.model.FullSessionContext;
+import io.axon.streams.model.SessionContext;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -30,12 +30,12 @@ import java.util.List;
  *   think-request-response
  *       │
  *       ▼  groupByKey (session_id)
- *   aggregate ──► MessageContext  (growing history list)
+ *   aggregate ──► SessionContext  (growing history list)
  *       │
  *       ▼  toStream
  *   message-context  (compacted changelog topic + queryable RocksDB store)
  * </pre>
- * Every {@link ThinkResponse} is appended to the running {@link MessageContext}
+ * Every {@link ThinkResponse} is appended to the running {@link SessionContext}
  * for that {@code session_id}, tracking full cost, LLM call count, and the
  * complete conversation history.
  *
@@ -59,26 +59,26 @@ public class AccumulateSessionContextProcessor {
     public static final String MESSAGE_CONTEXT_JOIN_STORE = "message-context-join-store";
 
     public static void register(StreamsBuilder builder) {
-        KTable<String, MessageContext> contextTable = registerAggregation(builder);
+        KTable<String, SessionContext> contextTable = registerAggregation(builder);
         registerJoin(builder, contextTable);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Fragment 1 — Aggregate ThinkResponses into a per-session MessageContext
+    // Fragment 1 — Aggregate ThinkResponses into a per-session SessionContext
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static KTable<String, MessageContext> registerAggregation(StreamsBuilder builder) {
+    private static KTable<String, SessionContext> registerAggregation(StreamsBuilder builder) {
 
         KStream<String, ThinkResponse> thinkStream = builder.stream(
                 Topics.THINK_REQUEST_RESPONSE,
                 Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
         );
 
-        KTable<String, MessageContext> contextTable = thinkStream
+        KTable<String, SessionContext> contextTable = thinkStream
                 .groupByKey(Grouped.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)))
                 .aggregate(
                         // Initialiser — called once when a session_id is seen for the first time
-                        () -> MessageContext.empty("unknown"),
+                        () -> SessionContext.empty("unknown"),
 
                         // Aggregator — append each ThinkResponse's messages into the history
                         (sessionId, response, current) -> {
@@ -93,7 +93,7 @@ public class AccumulateSessionContextProcessor {
                                     ? Collections.unmodifiableList(response.messages())
                                     : List.of();
 
-                            MessageContext updated = new MessageContext(
+                            SessionContext updated = new SessionContext(
                                     sessionId,
                                     resolveUserId(current.userId(), response.userId()),
                                     updatedCost,
@@ -112,10 +112,10 @@ public class AccumulateSessionContextProcessor {
                         },
 
                         // Materialise into a named, persistent, queryable store
-                        Materialized.<String, MessageContext>as(
+                        Materialized.<String, SessionContext>as(
                                 Stores.persistentKeyValueStore(MESSAGE_CONTEXT_STORE))
                                 .withKeySerde(Serdes.String())
-                                .withValueSerde(JsonSerde.of(MessageContext.class))
+                                .withValueSerde(JsonSerde.of(SessionContext.class))
                 );
 
         // Publish the changelog so external consumers can observe session state
@@ -125,7 +125,7 @@ public class AccumulateSessionContextProcessor {
                         sid, Topics.SESSION_CONTEXT,
                         ctx != null ? ctx.history().size() : 0))
                 .to(Topics.SESSION_CONTEXT,
-                        Produced.with(Serdes.String(), JsonSerde.of(MessageContext.class)));
+                        Produced.with(Serdes.String(), JsonSerde.of(SessionContext.class)));
 
         return contextTable;
     }
@@ -135,7 +135,7 @@ public class AccumulateSessionContextProcessor {
     // ─────────────────────────────────────────────────────────────────────────
 
     private static void registerJoin(StreamsBuilder builder,
-                                     KTable<String, MessageContext> contextTable) {
+                                     KTable<String, SessionContext> contextTable) {
 
         KStream<String, MessageInput> inputStream = builder.stream(
                 Topics.MESSAGE_INPUT,
@@ -156,7 +156,7 @@ public class AccumulateSessionContextProcessor {
                                     ? userMsg.userId()
                                     : (ctx != null ? ctx.userId() : null);
 
-                            FullMessageContext full = new FullMessageContext(
+                            FullSessionContext full = new FullSessionContext(
                                     userMsg.sessionId(),
                                     userId,
                                     history,
@@ -164,7 +164,7 @@ public class AccumulateSessionContextProcessor {
                                     Instant.now().toString()
                             );
 
-                            log.info("[{}] FullMessageContext built — history={} firstTurn={}",
+                            log.info("[{}] FullSessionContext built — history={} firstTurn={}",
                                     userMsg.sessionId(), history.size(), ctx == null);
 
                             return full;
@@ -172,13 +172,13 @@ public class AccumulateSessionContextProcessor {
                         Joined.with(
                                 Serdes.String(),
                                 JsonSerde.of(MessageInput.class),
-                                JsonSerde.of(MessageContext.class)
+                                JsonSerde.of(SessionContext.class)
                         )
                 )
                 .peek((sid, full) ->
                         log.debug("[{}] → {}", sid, Topics.ENRICHED_MESSAGE_INPUT))
                 .to(Topics.ENRICHED_MESSAGE_INPUT,
-                        Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
+                        Produced.with(Serdes.String(), JsonSerde.of(FullSessionContext.class)));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

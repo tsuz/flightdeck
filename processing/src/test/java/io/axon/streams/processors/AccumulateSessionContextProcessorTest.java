@@ -18,9 +18,9 @@ class AccumulateSessionContextProcessorTest {
 
     private TopologyTestDriver driver;
     private TestInputTopic<String, ThinkResponse>      thinkInput;
-    private TestOutputTopic<String, MessageContext>    contextOutput;
+    private TestOutputTopic<String, SessionContext>    contextOutput;
     private TestInputTopic<String, MessageInput>       messageInput;
-    private TestOutputTopic<String, FullMessageContext> fullContextOutput;
+    private TestOutputTopic<String, FullSessionContext> fullContextOutput;
 
     @BeforeEach
     void setUp() {
@@ -34,11 +34,11 @@ class AccumulateSessionContextProcessorTest {
         thinkInput       = driver.createInputTopic(Topics.THINK_REQUEST_RESPONSE,
                 Serdes.String().serializer(), JsonSerde.of(ThinkResponse.class).serializer());
         contextOutput    = driver.createOutputTopic(Topics.SESSION_CONTEXT,
-                Serdes.String().deserializer(), JsonSerde.of(MessageContext.class).deserializer());
+                Serdes.String().deserializer(), JsonSerde.of(SessionContext.class).deserializer());
         messageInput     = driver.createInputTopic(Topics.MESSAGE_INPUT,
                 Serdes.String().serializer(), JsonSerde.of(MessageInput.class).serializer());
         fullContextOutput = driver.createOutputTopic(Topics.ENRICHED_MESSAGE_INPUT,
-                Serdes.String().deserializer(), JsonSerde.of(FullMessageContext.class).deserializer());
+                Serdes.String().deserializer(), JsonSerde.of(FullSessionContext.class).deserializer());
     }
 
     @AfterEach
@@ -47,12 +47,12 @@ class AccumulateSessionContextProcessorTest {
     // ── Aggregation ───────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("First ThinkResponse creates a MessageContext with one message in history")
+    @DisplayName("First ThinkResponse creates a SessionContext with one message in history")
     void firstResponse_createsContext() {
         thinkInput.pipeInput("sess-1", thinkResp("sess-1", "user-A", 0.02, List.of(
                 assistantMsg("sess-1", "user-A", "Sure, I can help."))));
 
-        MessageContext ctx = contextOutput.readRecord().value();
+        SessionContext ctx = contextOutput.readRecord().value();
         assertThat(ctx.sessionId()).isEqualTo("sess-1");
         assertThat(ctx.userId()).isEqualTo("user-A");
         assertThat(ctx.llmCalls()).isEqualTo(1);
@@ -69,9 +69,9 @@ class AccumulateSessionContextProcessorTest {
         thinkInput.pipeInput("sess-2", thinkResp("sess-2", "u", 0.05, List.of(
                 assistantMsg("sess-2", "u", "Second."))));
 
-        List<TestRecord<String, MessageContext>> records = contextOutput.readRecordsToList();
+        List<TestRecord<String, SessionContext>> records = contextOutput.readRecordsToList();
         assertThat(records).hasSize(2);
-        MessageContext latest = records.get(1).value();
+        SessionContext latest = records.get(1).value();
         assertThat(latest.llmCalls()).isEqualTo(2);
         assertThat(latest.cost()).isCloseTo(0.08, within(0.0001));
         assertThat(latest.history()).extracting(MessageInput::content)
@@ -85,7 +85,7 @@ class AccumulateSessionContextProcessorTest {
                 userMsg("sess-3", "u", "What's my balance?"),
                 assistantMsg("sess-3", "u", "Your balance is $142.50."))));
 
-        MessageContext ctx = contextOutput.readRecord().value();
+        SessionContext ctx = contextOutput.readRecord().value();
         assertThat(ctx.history()).hasSize(2);
         assertThat(ctx.messages()).hasSize(2);
     }
@@ -97,11 +97,11 @@ class AccumulateSessionContextProcessorTest {
         thinkInput.pipeInput("B", thinkResp("B", "u2", 0.02, List.of(assistantMsg("B","u2","b1"))));
         thinkInput.pipeInput("A", thinkResp("A", "u1", 0.01, List.of(assistantMsg("A","u1","a2"))));
 
-        List<TestRecord<String, MessageContext>> all = contextOutput.readRecordsToList();
+        List<TestRecord<String, SessionContext>> all = contextOutput.readRecordsToList();
 
-        MessageContext ctxA = all.stream().filter(r -> "A".equals(r.key()))
+        SessionContext ctxA = all.stream().filter(r -> "A".equals(r.key()))
                 .reduce((a,b)->b).orElseThrow().value();
-        MessageContext ctxB = all.stream().filter(r -> "B".equals(r.key()))
+        SessionContext ctxB = all.stream().filter(r -> "B".equals(r.key()))
                 .reduce((a,b)->b).orElseThrow().value();
 
         assertThat(ctxA.history()).hasSize(2);
@@ -111,11 +111,11 @@ class AccumulateSessionContextProcessorTest {
     // ── Join ──────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("First-ever user message produces FullMessageContext with empty history")
+    @DisplayName("First-ever user message produces FullSessionContext with empty history")
     void firstUserMessage_emptyHistory() {
         messageInput.pipeInput("sess-new", userMsg("sess-new", "u", "Hello!"));
 
-        FullMessageContext full = fullContextOutput.readRecord().value();
+        FullSessionContext full = fullContextOutput.readRecord().value();
         assertThat(full.sessionId()).isEqualTo("sess-new");
         assertThat(full.history()).isEmpty();
         assertThat(full.latestInput().content()).isEqualTo("Hello!");
@@ -130,7 +130,7 @@ class AccumulateSessionContextProcessorTest {
 
         messageInput.pipeInput("sess-h", userMsg("sess-h", "u", "Follow-up?"));
 
-        FullMessageContext full = fullContextOutput.readRecord().value();
+        FullSessionContext full = fullContextOutput.readRecord().value();
         assertThat(full.history()).hasSize(1);
         assertThat(full.history().get(0).content()).isEqualTo("Prior answer.");
         assertThat(full.latestInput().content()).isEqualTo("Follow-up?");

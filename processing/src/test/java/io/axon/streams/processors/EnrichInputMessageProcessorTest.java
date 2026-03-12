@@ -32,10 +32,10 @@ class EnrichInputMessageProcessorTest {
     private TestInputTopic<String, MessageInput>   messageInput;
 
     /** Seeds the message-context KTable directly */
-    private TestInputTopic<String, MessageContext>  contextInput;
+    private TestInputTopic<String, SessionContext>  contextInput;
 
-    /** Captures the enriched FullMessageContext records */
-    private TestOutputTopic<String, FullMessageContext> fullContextOutput;
+    /** Captures the enriched FullSessionContext records */
+    private TestOutputTopic<String, FullSessionContext> fullContextOutput;
 
     @BeforeEach
     void setUp() {
@@ -57,12 +57,12 @@ class EnrichInputMessageProcessorTest {
         contextInput = driver.createInputTopic(
                 Topics.SESSION_CONTEXT,
                 Serdes.String().serializer(),
-                JsonSerde.of(MessageContext.class).serializer());
+                JsonSerde.of(SessionContext.class).serializer());
 
         fullContextOutput = driver.createOutputTopic(
                 Topics.ENRICHED_MESSAGE_INPUT,
                 Serdes.String().deserializer(),
-                JsonSerde.of(FullMessageContext.class).deserializer());
+                JsonSerde.of(FullSessionContext.class).deserializer());
     }
 
     @AfterEach
@@ -75,7 +75,7 @@ class EnrichInputMessageProcessorTest {
     void firstMessage_noContext_emptyHistory() {
         messageInput.pipeInput("sess-new", userMsg("sess-new", "user-Z", "Hello!"));
 
-        FullMessageContext full = fullContextOutput.readRecord().value();
+        FullSessionContext full = fullContextOutput.readRecord().value();
 
         assertThat(full.sessionId()).isEqualTo("sess-new");
         assertThat(full.userId()).isEqualTo("user-Z");
@@ -87,7 +87,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("Message with existing context carries the full history")
     void messageWithContext_includesHistory() {
         // Seed the KTable with two prior turns
-        MessageContext ctx = context("sess-h", "user-A", List.of(
+        SessionContext ctx = context("sess-h", "user-A", List.of(
                 assistantMsg("sess-h", "user-A", "First reply."),
                 assistantMsg("sess-h", "user-A", "Second reply.")
         ));
@@ -96,7 +96,7 @@ class EnrichInputMessageProcessorTest {
         // Now a new user message arrives
         messageInput.pipeInput("sess-h", userMsg("sess-h", "user-A", "Follow-up?"));
 
-        FullMessageContext full = fullContextOutput.readRecord().value();
+        FullSessionContext full = fullContextOutput.readRecord().value();
 
         assertThat(full.history()).hasSize(2);
         assertThat(full.history()).extracting(MessageInput::content)
@@ -112,7 +112,7 @@ class EnrichInputMessageProcessorTest {
 
         messageInput.pipeInput("sess-li", userMsg("sess-li", "u", "New question"));
 
-        FullMessageContext full = fullContextOutput.readRecord().value();
+        FullSessionContext full = fullContextOutput.readRecord().value();
         assertThat(full.history()).hasSize(1);
         assertThat(full.latestInput().content()).isEqualTo("New question");
         // New question must NOT appear in history
@@ -172,12 +172,12 @@ class EnrichInputMessageProcessorTest {
         messageInput.pipeInput("A", userMsg("A", "u1", "question-a"));
         messageInput.pipeInput("B", userMsg("B", "u2", "question-b"));
 
-        List<TestRecord<String, FullMessageContext>> records = fullContextOutput.readRecordsToList();
+        List<TestRecord<String, FullSessionContext>> records = fullContextOutput.readRecordsToList();
         assertThat(records).hasSize(2);
 
-        FullMessageContext forA = records.stream().filter(r -> "A".equals(r.key()))
+        FullSessionContext forA = records.stream().filter(r -> "A".equals(r.key()))
                 .findFirst().orElseThrow().value();
-        FullMessageContext forB = records.stream().filter(r -> "B".equals(r.key()))
+        FullSessionContext forB = records.stream().filter(r -> "B".equals(r.key()))
                 .findFirst().orElseThrow().value();
 
         assertThat(forA.history()).hasSize(2);
@@ -190,7 +190,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): null context produces empty history")
     void enrich_nullContext_emptyHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
-        FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, null);
+        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, null);
         assertThat(result.history()).isEmpty();
         assertThat(result.latestInput()).isEqualTo(msg);
         assertThat(result.sessionId()).isEqualTo("s");
@@ -200,8 +200,8 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): context with null history is treated as empty")
     void enrich_contextWithNullHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
-        MessageContext ctx = new MessageContext("s", "u", 0, 0, List.of(), null, TS);
-        FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
+        SessionContext ctx = new SessionContext("s", "u", 0, 0, List.of(), null, TS);
+        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
         assertThat(result.history()).isEmpty();
     }
 
@@ -210,8 +210,8 @@ class EnrichInputMessageProcessorTest {
     void enrich_historyForwarded() {
         MessageInput msg = userMsg("s", "u", "new");
         MessageInput prior = assistantMsg("s", "u", "old");
-        MessageContext ctx = context("s", "u", List.of(prior));
-        FullMessageContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
+        SessionContext ctx = context("s", "u", List.of(prior));
+        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
         assertThat(result.history()).containsExactly(prior);
         assertThat(result.latestInput()).isEqualTo(msg);
     }
@@ -220,7 +220,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): userId prefers message over context")
     void enrich_userIdFromMessage() {
         MessageInput msg = userMsg("s", "msg-user", "hi");
-        MessageContext ctx = context("s", "ctx-user", List.of());
+        SessionContext ctx = context("s", "ctx-user", List.of());
         assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("msg-user");
     }
 
@@ -228,7 +228,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): userId falls back to context when message userId is blank")
     void enrich_userIdFallback() {
         MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
-        MessageContext ctx = context("s", "ctx-user", List.of());
+        SessionContext ctx = context("s", "ctx-user", List.of());
         assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("ctx-user");
     }
 
@@ -244,9 +244,9 @@ class EnrichInputMessageProcessorTest {
         return new MessageInput(sessionId, userId, "assistant", content, TS, Map.of());
     }
 
-    private static MessageContext context(String sessionId, String userId,
+    private static SessionContext context(String sessionId, String userId,
                                           List<MessageInput> history) {
-        return new MessageContext(sessionId, userId, 0.0, history.size(),
+        return new SessionContext(sessionId, userId, 0.0, history.size(),
                 history.isEmpty() ? List.of() : List.of(history.get(history.size() - 1)),
                 history, TS);
     }

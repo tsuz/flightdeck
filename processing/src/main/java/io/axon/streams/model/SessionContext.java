@@ -15,7 +15,7 @@ import java.util.List;
  * </ul>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record MessageContext(
+public record SessionContext(
         @JsonProperty("session_id") String sessionId,
         @JsonProperty("user_id")    String userId,
         @JsonProperty("cost")       double cost,
@@ -25,7 +25,7 @@ public record MessageContext(
         @JsonProperty("timestamp")  String timestamp
 ) {
     /** Empty context — used as the Kafka Streams aggregate initialiser. */
-    public static MessageContext empty(String sessionId) {
-        return new MessageContext(sessionId, null, 0.0, 0, List.of(), List.of(), null);
+    public static SessionContext empty(String sessionId) {
+        return new SessionContext(sessionId, null, 0.0, 0, List.of(), List.of(), null);
     }
 }

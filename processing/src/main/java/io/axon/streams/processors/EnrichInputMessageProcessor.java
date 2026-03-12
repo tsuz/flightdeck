@@ -2,8 +2,8 @@ package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
 import io.axon.streams.model.MessageInput;
-import io.axon.streams.model.FullMessageContext;
-import io.axon.streams.model.MessageContext;
+import io.axon.streams.model.FullSessionContext;
+import io.axon.streams.model.SessionContext;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -67,13 +67,13 @@ public class EnrichInputMessageProcessor {
 
         // ── Right side: conversation history KTable (built by AccumulateSessionContextProcessor)
         // Read the message-context topic as a KTable with its own local state store.
-        KTable<String, MessageContext> contextTable = builder.table(
+        KTable<String, SessionContext> contextTable = builder.table(
                 Topics.SESSION_CONTEXT,
-                Consumed.with(Serdes.String(), JsonSerde.of(MessageContext.class)),
-                Materialized.<String, MessageContext>as(
+                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)),
+                Materialized.<String, SessionContext>as(
                         Stores.persistentKeyValueStore(ENRICH_CONTEXT_STORE))
                         .withKeySerde(Serdes.String())
-                        .withValueSerde(JsonSerde.of(MessageContext.class))
+                        .withValueSerde(JsonSerde.of(SessionContext.class))
         );
 
         // ── Left join: enrich each incoming message with its session history ──
@@ -85,7 +85,7 @@ public class EnrichInputMessageProcessor {
                         Joined.with(
                                 Serdes.String(),
                                 JsonSerde.of(MessageInput.class),
-                                JsonSerde.of(MessageContext.class)
+                                JsonSerde.of(SessionContext.class)
                         )
                 )
                 .peek((sessionId, full) ->
@@ -94,7 +94,7 @@ public class EnrichInputMessageProcessor {
                                 full.history().size(),
                                 full.history().isEmpty()))
                 .to(Topics.ENRICHED_MESSAGE_INPUT,
-                        Produced.with(Serdes.String(), JsonSerde.of(FullMessageContext.class)));
+                        Produced.with(Serdes.String(), JsonSerde.of(FullSessionContext.class)));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ public class EnrichInputMessageProcessor {
 
     /**
      * Merges an incoming {@link MessageInput} with the session's current
-     * {@link MessageContext} (which may be {@code null} on the first turn).
+     * {@link SessionContext} (which may be {@code null} on the first turn).
      *
      * <p>Rules:
      * <ul>
@@ -114,7 +114,7 @@ public class EnrichInputMessageProcessor {
      *       canonical key for this record.</li>
      * </ul>
      */
-    static FullMessageContext enrich(MessageInput message, MessageContext context) {
+    static FullSessionContext enrich(MessageInput message, SessionContext context) {
         List<MessageInput> history = (context != null && context.history() != null)
                 ? context.history()
                 : List.of();
@@ -123,7 +123,7 @@ public class EnrichInputMessageProcessor {
                 ? message.userId()
                 : (context != null ? context.userId() : null);
 
-        return new FullMessageContext(
+        return new FullSessionContext(
                 message.sessionId(),
                 userId,
                 history,

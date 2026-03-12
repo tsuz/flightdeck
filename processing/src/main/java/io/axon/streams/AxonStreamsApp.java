@@ -20,7 +20,7 @@ import java.util.Properties;
  * Entry-point: wires all processor fragments into a single Kafka Streams topology
  * and starts the application.
  *
- * As additional beige processors are implemented (AccumulateMessageContext,
+ * As additional beige processors are implemented (AccumulateSessionContext,
  * Think, ToolExecution, ToolResultAggregation, ToolLatencyAggregation) each
  * one is registered here with a single call.
  */

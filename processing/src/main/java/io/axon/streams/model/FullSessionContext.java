@@ -12,7 +12,7 @@ import java.util.List;
  * Published onto {@code enriched-message-input} and consumed by the Think processor.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record FullMessageContext(
+public record FullSessionContext(
         @JsonProperty("session_id")   String sessionId,
         @JsonProperty("user_id")      String userId,
         @JsonProperty("history")      List<MessageInput> history,

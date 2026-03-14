@@ -1,150 +1,103 @@
 package io.axon.think.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Defines the tools available to the Claude agent.
- * Each tool is described as a JSON-compatible map matching the Anthropic tool schema.
+ * Loads tool definitions from {@code tools.json} — the single source of truth
+ * shared with the prompts/Qdrant seed pipeline.
+ *
+ * <p>Resolution order:
+ * <ol>
+ *   <li>{@code TOOLS_JSON_PATH} env var (absolute path)</li>
+ *   <li>{@code tools.json} on the classpath</li>
+ * </ol>
+ *
+ * <p>Each entry in tools.json contains both the Claude API schema fields
+ * ({@code name}, {@code description}, {@code input_schema}) and the RAG
+ * prompt context ({@code prompt_context}, {@code category}). This class
+ * extracts only the API-relevant fields.
  */
 public final class ToolDefinitions {
+
+    private static final Logger log = LoggerFactory.getLogger(ToolDefinitions.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static List<Map<String, Object>> cachedTools;
 
     private ToolDefinitions() {}
 
     /**
-     * Returns the list of tool definitions to include in Claude API requests.
-     * Add or remove tools here as the agent's capabilities evolve.
+     * Returns the list of tool definitions formatted for the Claude API.
+     * Loaded once and cached.
      */
-    public static List<Map<String, Object>> getTools() {
-        return List.of(
-                webSearchTool(),
-                lookupContactsTool(),
-                scheduleMeetingTool(),
-                sendEmailTool(),
-                createTaskTool()
-        );
+    public static synchronized List<Map<String, Object>> getTools() {
+        if (cachedTools == null) {
+            cachedTools = loadTools();
+        }
+        return cachedTools;
     }
 
-    private static Map<String, Object> webSearchTool() {
-        return Map.of(
-                "name", "web_search",
-                "description", "Search the web for current information on a topic.",
-                "input_schema", Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "query", Map.of(
-                                        "type", "string",
-                                        "description", "The search query"
-                                )
-                        ),
-                        "required", List.of("query")
-                )
-        );
+    private static List<Map<String, Object>> loadTools() {
+        List<Map<String, Object>> rawTools = loadRawTools();
+        List<Map<String, Object>> apiTools = new ArrayList<>();
+
+        for (Map<String, Object> raw : rawTools) {
+            // Extract only fields needed by Claude API
+            Map<String, Object> tool = new LinkedHashMap<>();
+            tool.put("name", raw.get("name"));
+            tool.put("description", raw.get("description"));
+            tool.put("input_schema", raw.get("input_schema"));
+            apiTools.add(tool);
+        }
+
+        log.info("Loaded {} tool definitions: {}",
+                apiTools.size(),
+                apiTools.stream().map(t -> (String) t.get("name")).toList());
+
+        return apiTools;
     }
 
-    private static Map<String, Object> lookupContactsTool() {
-        return Map.of(
-                "name", "lookup_contacts",
-                "description", "Look up contact information for a person by name or email.",
-                "input_schema", Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "name", Map.of(
-                                        "type", "string",
-                                        "description", "The name of the person to look up"
-                                ),
-                                "email", Map.of(
-                                        "type", "string",
-                                        "description", "The email of the person to look up"
-                                )
-                        ),
-                        "required", List.of()
-                )
-        );
-    }
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> loadRawTools() {
+        // 1. Try external file path from env
+        String externalPath = System.getenv("TOOLS_JSON_PATH");
+        if (externalPath != null && !externalPath.isBlank()) {
+            Path path = Path.of(externalPath);
+            if (Files.exists(path)) {
+                try {
+                    log.info("Loading tools from external path: {}", path);
+                    return MAPPER.readValue(path.toFile(),
+                            new TypeReference<List<Map<String, Object>>>() {});
+                } catch (IOException e) {
+                    log.error("Failed to load tools from {}: {}", path, e.getMessage());
+                }
+            }
+        }
 
-    private static Map<String, Object> scheduleMeetingTool() {
-        return Map.of(
-                "name", "schedule_meeting",
-                "description", "Schedule a meeting with participants at a given time.",
-                "input_schema", Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "title", Map.of(
-                                        "type", "string",
-                                        "description", "Meeting title"
-                                ),
-                                "participants", Map.of(
-                                        "type", "array",
-                                        "items", Map.of("type", "string"),
-                                        "description", "List of participant emails"
-                                ),
-                                "start_time", Map.of(
-                                        "type", "string",
-                                        "description", "ISO 8601 start time"
-                                ),
-                                "duration_minutes", Map.of(
-                                        "type", "integer",
-                                        "description", "Duration in minutes"
-                                )
-                        ),
-                        "required", List.of("title", "participants", "start_time", "duration_minutes")
-                )
-        );
-    }
+        // 2. Try classpath
+        try (InputStream is = ToolDefinitions.class.getResourceAsStream("/tools.json")) {
+            if (is != null) {
+                log.info("Loading tools from classpath: tools.json");
+                return MAPPER.readValue(is,
+                        new TypeReference<List<Map<String, Object>>>() {});
+            }
+        } catch (IOException e) {
+            log.error("Failed to load tools from classpath: {}", e.getMessage());
+        }
 
-    private static Map<String, Object> sendEmailTool() {
-        return Map.of(
-                "name", "send_email",
-                "description", "Send an email to a recipient.",
-                "input_schema", Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "to", Map.of(
-                                        "type", "string",
-                                        "description", "Recipient email address"
-                                ),
-                                "subject", Map.of(
-                                        "type", "string",
-                                        "description", "Email subject line"
-                                ),
-                                "body", Map.of(
-                                        "type", "string",
-                                        "description", "Email body content"
-                                )
-                        ),
-                        "required", List.of("to", "subject", "body")
-                )
-        );
-    }
-
-    private static Map<String, Object> createTaskTool() {
-        return Map.of(
-                "name", "create_task",
-                "description", "Create a task or to-do item.",
-                "input_schema", Map.of(
-                        "type", "object",
-                        "properties", Map.of(
-                                "title", Map.of(
-                                        "type", "string",
-                                        "description", "Task title"
-                                ),
-                                "description", Map.of(
-                                        "type", "string",
-                                        "description", "Task description"
-                                ),
-                                "due_date", Map.of(
-                                        "type", "string",
-                                        "description", "Due date in ISO 8601 format"
-                                ),
-                                "priority", Map.of(
-                                        "type", "string",
-                                        "enum", List.of("low", "medium", "high"),
-                                        "description", "Task priority"
-                                )
-                        ),
-                        "required", List.of("title")
-                )
-        );
+        log.warn("No tools.json found — running with no tools");
+        return List.of();
     }
 }

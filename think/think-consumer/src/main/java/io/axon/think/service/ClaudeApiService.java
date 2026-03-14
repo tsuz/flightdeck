@@ -136,6 +136,16 @@ public class ClaudeApiService {
             List<MessageInput> responseMessages = new ArrayList<>();
             List<ToolUseItem> toolUses = new ArrayList<>();
 
+            // First pass: count tool_use blocks to set totalTools on each item
+            int totalToolCount = 0;
+            if (contentBlocks != null && contentBlocks.isArray()) {
+                for (JsonNode block : contentBlocks) {
+                    if ("tool_use".equals(block.path("type").asText())) {
+                        totalToolCount++;
+                    }
+                }
+            }
+
             if (contentBlocks != null && contentBlocks.isArray()) {
                 for (JsonNode block : contentBlocks) {
                     String type = block.path("type").asText();
@@ -159,6 +169,7 @@ public class ClaudeApiService {
                                 toolName,
                                 input,
                                 sessionId,
+                                totalToolCount,
                                 Instant.now().toString()
                         ));
                     }

@@ -72,7 +72,7 @@ public class AxonStreamsApp {
         ExtractToolUseItemsProcessor.register(builder);
         SessionCostAggregationProcessor.register(builder);
         EndTurnProcessor.register(builder);
-        // AggregateToolExecutionResultProcessor.register(builder);
+        AggregateToolExecutionResultProcessor.register(builder);
         // TransformToolUseDoneProcessor.register(builder);
         // AggregateToolLatencyProcessor.register(builder);
         // ThinkProcessor.register(builder);        // TODO

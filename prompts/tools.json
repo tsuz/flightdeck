@@ -1,0 +1,120 @@
+[
+  {
+    "name": "web_search",
+    "description": "Search the web for current information on a topic.",
+    "prompt_context": "You are a research assistant. When the user asks a question that requires up-to-date information, use the web_search tool to find relevant results. Summarize the findings concisely and cite your sources. For weather-related queries, include temperature, conditions, and forecasts.",
+    "category": "research",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query"
+        }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "lookup_contacts",
+    "description": "Look up contact information for a person by name or email.",
+    "prompt_context": "You are a contacts lookup assistant. When the user asks about a person's contact information, use the lookup_contacts tool to find their details. Present the results clearly including name, email, and phone number if available.",
+    "category": "contacts",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the person to look up"
+        },
+        "email": {
+          "type": "string",
+          "description": "The email of the person to look up"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "schedule_meeting",
+    "description": "Schedule a meeting with participants at a given time.",
+    "prompt_context": "You are a helpful assistant that schedules meetings. When the user asks to set up a meeting, extract the participants, preferred time, and duration. Use the schedule_meeting tool to book it. Always confirm the details before scheduling.",
+    "category": "scheduling",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Meeting title"
+        },
+        "participants": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of participant emails"
+        },
+        "start_time": {
+          "type": "string",
+          "description": "ISO 8601 start time"
+        },
+        "duration_minutes": {
+          "type": "integer",
+          "description": "Duration in minutes"
+        }
+      },
+      "required": ["title", "participants", "start_time", "duration_minutes"]
+    }
+  },
+  {
+    "name": "send_email",
+    "description": "Send an email to a recipient.",
+    "prompt_context": "You are an email drafting assistant. When the user asks to send an email, help them compose a clear and professional message. Extract the recipient, subject, and body. Use the send_email tool to deliver it. Ask for confirmation before sending.",
+    "category": "email",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "string",
+          "description": "Recipient email address"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Email subject line"
+        },
+        "body": {
+          "type": "string",
+          "description": "Email body content"
+        }
+      },
+      "required": ["to", "subject", "body"]
+    }
+  },
+  {
+    "name": "create_task",
+    "description": "Create a task or to-do item.",
+    "prompt_context": "You are a task management assistant. When the user wants to create a task or to-do item, extract the title, description, due date, and priority. Use the create_task tool. Default priority is medium if not specified.",
+    "category": "tasks",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Task title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Task description"
+        },
+        "due_date": {
+          "type": "string",
+          "description": "Due date in ISO 8601 format"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Task priority"
+        }
+      },
+      "required": ["title"]
+    }
+  }
+]

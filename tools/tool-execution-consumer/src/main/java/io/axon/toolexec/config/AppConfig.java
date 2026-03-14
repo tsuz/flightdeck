@@ -36,6 +36,10 @@ public final class AppConfig {
     public static final String TASKS_URL =
             env("TASKS_URL", "http://localhost:8082/api/tools/tasks");
 
+    // ── Feature flags ────────────────────────────────────────────────────────
+    public static final boolean MOCK_MODE =
+            Boolean.parseBoolean(env("MOCK_MODE", "true"));
+
     // ── Consumer tuning ─────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =
             Long.parseLong(env("POLL_TIMEOUT_MS", "1000"));

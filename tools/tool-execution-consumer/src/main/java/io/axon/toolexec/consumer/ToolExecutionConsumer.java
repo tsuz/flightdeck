@@ -107,6 +107,7 @@ public class ToolExecutionConsumer implements AutoCloseable {
                     Map.of("error", "Unknown tool: " + item.name()),
                     0L,
                     "error",
+                    item.totalTools(),
                     Instant.now().toString()
             );
         } else {
@@ -150,6 +151,7 @@ public class ToolExecutionConsumer implements AutoCloseable {
                     toolResult,
                     latencyMs,
                     "success",
+                    item.totalTools(),
                     Instant.now().toString()
             );
 
@@ -165,6 +167,7 @@ public class ToolExecutionConsumer implements AutoCloseable {
                     Map.of("error", e.getMessage() != null ? e.getMessage() : "Unknown error"),
                     latencyMs,
                     "error",
+                    item.totalTools(),
                     Instant.now().toString()
             );
         }

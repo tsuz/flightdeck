@@ -2,6 +2,7 @@ package io.axon.toolexec.executor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.axon.toolexec.config.AppConfig;
+import io.axon.toolexec.executor.mock.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,7 +11,8 @@ import java.util.Map;
 
 /**
  * Registry that maps tool names to their executor implementations.
- * Looks up the correct executor for each incoming {@code ToolUseItem}.
+ * Uses mock executors when {@code MOCK_MODE=true} (default),
+ * or HTTP executors that call external services when {@code MOCK_MODE=false}.
  */
 public class ToolExecutorRegistry {
 
@@ -19,25 +21,29 @@ public class ToolExecutorRegistry {
     private final Map<String, ToolExecutor> executors = new HashMap<>();
 
     public ToolExecutorRegistry(ObjectMapper mapper) {
-        register(new HttpToolExecutor("web_search", AppConfig.WEB_SEARCH_URL, mapper));
-        register(new HttpToolExecutor("lookup_contacts", AppConfig.CONTACTS_URL, mapper));
-        register(new HttpToolExecutor("schedule_meeting", AppConfig.CALENDAR_URL, mapper));
-        register(new HttpToolExecutor("send_email", AppConfig.EMAIL_URL, mapper));
-        register(new HttpToolExecutor("create_task", AppConfig.TASKS_URL, mapper));
+        if (AppConfig.MOCK_MODE) {
+            log.info("Running in MOCK mode");
+            register(new MockWebSearchExecutor());
+            register(new MockLookupContactsExecutor());
+            register(new MockScheduleMeetingExecutor());
+            register(new MockSendEmailExecutor());
+            register(new MockCreateTaskExecutor());
+        } else {
+            log.info("Running in HTTP mode");
+            register(new HttpToolExecutor("web_search", AppConfig.WEB_SEARCH_URL, mapper));
+            register(new HttpToolExecutor("lookup_contacts", AppConfig.CONTACTS_URL, mapper));
+            register(new HttpToolExecutor("schedule_meeting", AppConfig.CALENDAR_URL, mapper));
+            register(new HttpToolExecutor("send_email", AppConfig.EMAIL_URL, mapper));
+            register(new HttpToolExecutor("create_task", AppConfig.TASKS_URL, mapper));
+        }
 
         log.info("Registered {} tool executors: {}", executors.size(), executors.keySet());
     }
 
-    /**
-     * Register a custom executor (useful for testing or adding new tools).
-     */
     public void register(ToolExecutor executor) {
         executors.put(executor.toolName(), executor);
     }
 
-    /**
-     * Returns the executor for the given tool name, or null if not found.
-     */
     public ToolExecutor get(String toolName) {
         return executors.get(toolName);
     }

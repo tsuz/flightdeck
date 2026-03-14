@@ -98,10 +98,11 @@ public class ThinkConsumer implements AutoCloseable {
      * 4. Produce ThinkResponse to think-request-response
      */
     void processRecord(ConsumerRecord<String, String> record) throws Exception {
-        String sessionId = record.key();
-
         // 1. Deserialize input
         FullSessionContext context = mapper.readValue(record.value(), FullSessionContext.class);
+
+        // Use record key if present, otherwise fall back to session_id from the payload
+        String sessionId = record.key() != null ? record.key() : context.sessionId();
         String userId = context.userId();
 
         log.info("[{}] Processing enriched input: history_size={} latest_role={}",
@@ -111,7 +112,7 @@ public class ThinkConsumer implements AutoCloseable {
 
         // 2. Query RAG for prompt context
         String latestContent = context.latestInput() != null ? context.latestInput().content() : "";
-        List<String> ragChunks = ragService.retrieveContext(latestContent, sessionId);
+        List<String> ragChunks = List.of(); // ragService.retrieveContext(latestContent, sessionId);
 
         // 3. Build system prompt with RAG context
         String systemPrompt = buildSystemPrompt(ragChunks);

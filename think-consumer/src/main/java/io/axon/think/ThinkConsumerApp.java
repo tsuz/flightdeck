@@ -16,6 +16,14 @@ public class ThinkConsumerApp {
     private static final Logger log = LoggerFactory.getLogger(ThinkConsumerApp.class);
 
     public static void main(String[] args) {
+        // If --standalone flag or "standalone" arg, run without Kafka
+        if (args.length > 0 && ("--standalone".equals(args[0]) || "standalone".equals(args[0]))) {
+            String[] remaining = new String[Math.max(0, args.length - 1)];
+            System.arraycopy(args, 1, remaining, 0, remaining.length);
+            StandaloneRunner.main(remaining);
+            return;
+        }
+
         log.info("Starting Think Consumer");
         log.info("  Kafka:       {}", AppConfig.BOOTSTRAP_SERVERS);
         log.info("  Input topic: {}", AppConfig.INPUT_TOPIC);

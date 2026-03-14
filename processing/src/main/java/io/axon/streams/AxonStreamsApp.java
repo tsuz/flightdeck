@@ -1,7 +1,7 @@
 package io.axon.streams;
 
+import io.axon.streams.processors.AccumulateSessionContextProcessor;
 import io.axon.streams.processors.AggregateToolExecutionResultProcessor;
-
 import io.axon.streams.processors.EndTurnProcessor;
 import io.axon.streams.processors.EnrichInputMessageProcessor;
 import io.axon.streams.processors.ExtractToolUseItemsProcessor;
@@ -67,11 +67,11 @@ public class AxonStreamsApp {
         StreamsBuilder builder = new StreamsBuilder();
 
         // ── Register each beige processor fragment ───────────────────────────
-        // ExtractToolUseItemsProcessor.register(builder);
-        // AccumulateMessageContextProcessor.register(builder);
+        AccumulateSessionContextProcessor.register(builder);
         EnrichInputMessageProcessor.register(builder);
-        // SessionCostAggregationProcessor.register(builder);
-        // EndTurnProcessor.register(builder);
+        ExtractToolUseItemsProcessor.register(builder);
+        SessionCostAggregationProcessor.register(builder);
+        EndTurnProcessor.register(builder);
         // AggregateToolExecutionResultProcessor.register(builder);
         // TransformToolUseDoneProcessor.register(builder);
         // AggregateToolLatencyProcessor.register(builder);
@@ -91,6 +91,8 @@ public class AxonStreamsApp {
               org.apache.kafka.common.serialization.Serdes.StringSerde.class);
         // At-least-once delivery; change to EXACTLY_ONCE_V2 for production
         p.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.AT_LEAST_ONCE);
+        // Reduce latency: flush cache and commit more frequently
+        p.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 10);
         return p;
     }
 }

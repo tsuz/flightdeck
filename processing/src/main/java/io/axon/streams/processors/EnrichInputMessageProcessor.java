@@ -76,8 +76,13 @@ public class EnrichInputMessageProcessor {
                         .withValueSerde(JsonSerde.of(SessionContext.class))
         );
 
+        // ── Re-key by session_id from the message value so the join works
+        //    even when the Kafka record key is null or different ──────────────
+        KStream<String, MessageInput> keyedStream = inputStream
+                .selectKey((key, msg) -> msg.sessionId());
+
         // ── Left join: enrich each incoming message with its session history ──
-        inputStream
+        keyedStream
                 .leftJoin(
                         contextTable,
                         EnrichInputMessageProcessor::enrich,

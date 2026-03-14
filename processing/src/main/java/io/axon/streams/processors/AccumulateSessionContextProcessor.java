@@ -2,7 +2,6 @@ package io.axon.streams.processors;
 
 import io.axon.streams.config.Topics;
 import io.axon.streams.model.MessageInput;
-import io.axon.streams.model.FullSessionContext;
 import io.axon.streams.model.SessionContext;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.serdes.JsonSerde;
@@ -59,8 +58,7 @@ public class AccumulateSessionContextProcessor {
     public static final String MESSAGE_CONTEXT_JOIN_STORE = "message-context-join-store";
 
     public static void register(StreamsBuilder builder) {
-        KTable<String, SessionContext> contextTable = registerAggregation(builder);
-        registerJoin(builder, contextTable);
+        registerAggregation(builder);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -75,6 +73,7 @@ public class AccumulateSessionContextProcessor {
         );
 
         KTable<String, SessionContext> contextTable = thinkStream
+                .filter((key, value) -> key != null && value != null)
                 .groupByKey(Grouped.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)))
                 .aggregate(
                         // Initialiser — called once when a session_id is seen for the first time
@@ -128,57 +127,6 @@ public class AccumulateSessionContextProcessor {
                         Produced.with(Serdes.String(), JsonSerde.of(SessionContext.class)));
 
         return contextTable;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Fragment 2 — Left-join incoming user messages with the history KTable
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private static void registerJoin(StreamsBuilder builder,
-                                     KTable<String, SessionContext> contextTable) {
-
-        KStream<String, MessageInput> inputStream = builder.stream(
-                Topics.MESSAGE_INPUT,
-                Consumed.with(Serdes.String(), JsonSerde.of(MessageInput.class))
-        );
-
-        inputStream
-                .leftJoin(
-                        contextTable,
-                        (userMsg, ctx) -> {
-                            // ctx is null on the very first turn of a new session
-                            List<MessageInput> history =
-                                    (ctx != null && ctx.history() != null)
-                                    ? ctx.history()
-                                    : List.of();
-
-                            String userId = userMsg.userId() != null
-                                    ? userMsg.userId()
-                                    : (ctx != null ? ctx.userId() : null);
-
-                            FullSessionContext full = new FullSessionContext(
-                                    userMsg.sessionId(),
-                                    userId,
-                                    history,
-                                    userMsg,
-                                    Instant.now().toString()
-                            );
-
-                            log.info("[{}] FullSessionContext built — history={} firstTurn={}",
-                                    userMsg.sessionId(), history.size(), ctx == null);
-
-                            return full;
-                        },
-                        Joined.with(
-                                Serdes.String(),
-                                JsonSerde.of(MessageInput.class),
-                                JsonSerde.of(SessionContext.class)
-                        )
-                )
-                .peek((sid, full) ->
-                        log.debug("[{}] → {}", sid, Topics.ENRICHED_MESSAGE_INPUT))
-                .to(Topics.ENRICHED_MESSAGE_INPUT,
-                        Produced.with(Serdes.String(), JsonSerde.of(FullSessionContext.class)));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

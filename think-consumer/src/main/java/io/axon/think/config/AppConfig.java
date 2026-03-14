@@ -41,6 +41,10 @@ public final class AppConfig {
     public static final int RAG_TOP_K =
             Integer.parseInt(env("RAG_TOP_K", "5"));
 
+    // ── Feature flags ─────────────────────────────────────────────────────
+    public static final boolean TOOLS_ENABLED =
+            Boolean.parseBoolean(env("TOOLS_ENABLED", "false"));
+
     // ── Consumer tuning ─────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =
             Long.parseLong(env("POLL_TIMEOUT_MS", "1000"));

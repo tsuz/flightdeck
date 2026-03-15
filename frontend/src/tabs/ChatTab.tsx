@@ -5,10 +5,12 @@ import "./ChatTab.css";
 interface Props {
   messages: ChatMessage[];
   thinking: boolean;
+  sessionId: string;
   onSend: (content: string) => void;
+  onNewChat: () => void;
 }
 
-export function ChatTab({ messages, thinking, onSend }: Props) {
+export function ChatTab({ messages, thinking, sessionId, onSend, onNewChat }: Props) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -26,6 +28,11 @@ export function ChatTab({ messages, thinking, onSend }: Props) {
 
   return (
     <div className="chat-tab">
+      <div className="chat-header">
+        <span className="chat-session-id">{sessionId}</span>
+        <button className="chat-new-btn" onClick={onNewChat}>New Chat</button>
+      </div>
+
       <div className="chat-messages">
         {messages.length === 0 && !thinking && (
           <div className="chat-empty">

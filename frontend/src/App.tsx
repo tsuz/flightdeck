@@ -16,7 +16,7 @@ const TABS: { key: Tab; label: string }[] = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
-  const { connected, messages, conversations, logs, thinking, sendMessage } = useWebSocket();
+  const { connected, messages, conversations, logs, thinking, sessionId, sendMessage, newChat } = useWebSocket();
 
   return (
     <div className="app">
@@ -47,7 +47,7 @@ export default function App() {
 
       <main className="content">
         {activeTab === "chat" && (
-          <ChatTab messages={messages} thinking={thinking} onSend={sendMessage} />
+          <ChatTab messages={messages} thinking={thinking} sessionId={sessionId} onSend={sendMessage} onNewChat={newChat} />
         )}
         {activeTab === "execution" && <ExecutionTab conversations={conversations} />}
         {activeTab === "monitoring" && <MonitoringTab conversations={conversations} />}

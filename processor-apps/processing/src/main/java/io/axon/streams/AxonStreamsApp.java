@@ -73,7 +73,7 @@ public class AxonStreamsApp {
         SessionCostAggregationProcessor.register(builder);
         EndTurnProcessor.register(builder);
         AggregateToolExecutionResultProcessor.register(builder);
-        // TransformToolUseDoneProcessor.register(builder);
+        TransformToolUseDoneProcessor.register(builder);
         // AggregateToolLatencyProcessor.register(builder);
         // ThinkProcessor.register(builder);        // TODO
         // ToolExecutionProcessor.register(builder); // TODO

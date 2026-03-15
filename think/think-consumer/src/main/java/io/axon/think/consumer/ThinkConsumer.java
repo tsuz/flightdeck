@@ -111,7 +111,7 @@ public class ThinkConsumer implements AutoCloseable {
                 context.latestInput() != null ? context.latestInput().role() : "null");
 
         // 2. Query RAG for prompt context
-        String latestContent = context.latestInput() != null ? context.latestInput().content() : "";
+        String latestContent = context.latestInput() != null ? context.latestInput().contentAsString() : "";
         List<String> ragChunks = ragService.retrieveContext(latestContent, sessionId);
 
         // 3. Build system prompt with RAG context

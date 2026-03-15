@@ -268,11 +268,11 @@ class AggregateToolExecutionResultProcessorTest {
 
     private static ToolUseItem toolUseItem(String toolUseId, String name, String sessionId) {
         return new ToolUseItem(toolUseId, "tool_" + toolUseId, name,
-                Map.of(), sessionId, TS);
+                Map.of(), sessionId, 1, TS);
     }
 
     private static ToolUseResult toolResult(String sessionId, String toolUseId, String name) {
         return new ToolUseResult(sessionId, toolUseId, name,
-                Map.of("status", "ok"), 320L, "success", TS);
+                Map.of("status", "ok"), 320L, "success", 1, TS);
     }
 }

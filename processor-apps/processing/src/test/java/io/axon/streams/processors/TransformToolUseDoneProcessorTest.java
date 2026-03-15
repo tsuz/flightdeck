@@ -93,31 +93,33 @@ class TransformToolUseDoneProcessorTest {
     }
 
     @Test
-    @DisplayName("Content is a non-empty JSON string containing tool names")
+    @DisplayName("Content is a non-empty list containing tool names")
     void agentMessage_contentContainsToolNames() {
         allCompleteInput.pipeInput("sess-4", accumulator("sess-4", "u", List.of(
                 result("sess-4", "t1", "get_invoice_balance", Map.of("due", 50.0)),
                 result("sess-4", "t2", "send_reminder",       Map.of("sent", true))
         )));
 
-        String content = messageOutput.readRecord().value().content();
-        assertThat(content).isNotBlank();
-        assertThat(content).contains("get_invoice_balance");
-        assertThat(content).contains("send_reminder");
+        Object content = messageOutput.readRecord().value().content();
+        assertThat(content).isInstanceOf(List.class);
+        String contentStr = content.toString();
+        assertThat(contentStr).contains("get_invoice_balance");
+        assertThat(contentStr).contains("send_reminder");
     }
 
     @Test
-    @DisplayName("Content JSON includes tool_use_id, name, result, and status fields")
+    @DisplayName("Content includes tool_use_id, name, result, and status fields")
     void agentMessage_contentHasRequiredFields() {
         allCompleteInput.pipeInput("sess-5", accumulator("sess-5", "u", List.of(
                 result("sess-5", "tuid-99", "my_tool", Map.of("key", "value"))
         )));
 
-        String content = messageOutput.readRecord().value().content();
-        assertThat(content).contains("tuid-99");
-        assertThat(content).contains("my_tool");
-        assertThat(content).contains("success");
-        assertThat(content).contains("key");
+        Object content = messageOutput.readRecord().value().content();
+        String contentStr = content.toString();
+        assertThat(contentStr).contains("tuid-99");
+        assertThat(contentStr).contains("my_tool");
+        assertThat(contentStr).contains("success");
+        assertThat(contentStr).contains("key");
     }
 
     // ── Metadata ──────────────────────────────────────────────────────────────
@@ -174,43 +176,42 @@ class TransformToolUseDoneProcessorTest {
         assertThat(messageOutput.isEmpty()).isTrue();
     }
 
-    // ── Pure function: serializeResults ──────────────────────────────────────
+    // ── Pure function: buildContentList ────────────────────────────────────────
 
     @Test
-    @DisplayName("serializeResults: null list returns '[]'")
-    void serializeResults_null() {
-        assertThat(serializeResults(null)).isEqualTo("[]");
+    @DisplayName("buildContentList: null list returns empty list")
+    void buildContentList_null() {
+        assertThat(buildContentList(null)).isEmpty();
     }
 
     @Test
-    @DisplayName("serializeResults: empty list returns '[]'")
-    void serializeResults_empty() {
-        assertThat(serializeResults(List.of())).isEqualTo("[]");
+    @DisplayName("buildContentList: empty list returns empty list")
+    void buildContentList_empty() {
+        assertThat(buildContentList(List.of())).isEmpty();
     }
 
     @Test
-    @DisplayName("serializeResults: single result serialises to valid JSON array")
-    void serializeResults_single() {
-        String json = serializeResults(List.of(
+    @DisplayName("buildContentList: single result produces list with one entry")
+    void buildContentList_single() {
+        List<Map<String, Object>> content = buildContentList(List.of(
                 result("s", "t1", "get_balance", Map.of("balance", 50.0))));
 
-        assertThat(json).startsWith("[").endsWith("]");
-        assertThat(json).contains("get_balance");
-        assertThat(json).contains("t1");
-        assertThat(json).contains("success");
+        assertThat(content).hasSize(1);
+        assertThat(content.get(0)).containsEntry("name", "get_balance");
+        assertThat(content.get(0)).containsEntry("tool_use_id", "t1");
+        assertThat(content.get(0)).containsEntry("status", "success");
     }
 
     @Test
-    @DisplayName("serializeResults: multiple results appear as separate JSON objects")
-    void serializeResults_multiple() {
-        String json = serializeResults(List.of(
+    @DisplayName("buildContentList: multiple results appear as separate entries")
+    void buildContentList_multiple() {
+        List<Map<String, Object>> content = buildContentList(List.of(
                 result("s", "t1", "tool_a", Map.of()),
                 result("s", "t2", "tool_b", Map.of())));
 
-        assertThat(json).contains("tool_a");
-        assertThat(json).contains("tool_b");
-        assertThat(json).contains("t1");
-        assertThat(json).contains("t2");
+        assertThat(content).hasSize(2);
+        assertThat(content.get(0)).containsEntry("name", "tool_a");
+        assertThat(content.get(1)).containsEntry("name", "tool_b");
     }
 
     // ── Pure function: buildMetadata ─────────────────────────────────────────
@@ -255,11 +256,13 @@ class TransformToolUseDoneProcessorTest {
     }
 
     @Test
-    @DisplayName("toMessageInput: content is non-blank for non-empty results")
-    void toMessageInput_contentNonBlank() {
+    @DisplayName("toMessageInput: content is non-empty for non-empty results")
+    void toMessageInput_contentNonEmpty() {
         ToolResultAccumulator acc = accumulator("s", "u", List.of(
                 result("s", "t1", "tool_x", Map.of("k", "v"))));
-        assertThat(toMessageInput("s", acc).content()).isNotBlank();
+        Object content = toMessageInput("s", acc).content();
+        assertThat(content).isInstanceOf(List.class);
+        assertThat((List<?>) content).isNotEmpty();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -274,6 +277,6 @@ class TransformToolUseDoneProcessorTest {
 
     private static ToolUseResult result(String sessionId, String toolUseId,
                                          String name, Map<String, Object> resultData) {
-        return new ToolUseResult(sessionId, toolUseId, name, resultData, 320L, "success", TS);
+        return new ToolUseResult(sessionId, toolUseId, name, resultData, 320L, "success", 1, TS);
     }
 }

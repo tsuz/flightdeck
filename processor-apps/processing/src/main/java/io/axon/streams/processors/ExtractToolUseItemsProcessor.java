@@ -64,10 +64,23 @@ public class ExtractToolUseItemsProcessor {
                 });
 
         // ── Step 2: flat-map — one ToolUseItem record per tool call ──────────
+        //   Sets totalTools on each item from the list size so downstream
+        //   aggregation knows how many results to expect.
         KStream<String, ToolUseItem> flatItems = withToolUses
                 .flatMapValues((sessionId, response) -> {
-                    log.info("[{}] Fanning out {} tool-use item(s)", sessionId, response.toolUses().size());
-                    return response.toolUses();
+                    List<ToolUseItem> items = response.toolUses();
+                    int totalTools = items.size();
+                    log.info("[{}] Fanning out {} tool-use item(s)", sessionId, totalTools);
+                    return items.stream()
+                            .map(item -> new ToolUseItem(
+                                    item.toolUseId(),
+                                    item.toolId(),
+                                    item.name(),
+                                    item.input(),
+                                    item.sessionId(),
+                                    totalTools,
+                                    item.timestamp()))
+                            .toList();
                 });
                         
         // ── Step 3: branch — valid items vs dead-letter ───────────────────────

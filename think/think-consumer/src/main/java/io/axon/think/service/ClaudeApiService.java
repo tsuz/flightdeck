@@ -147,21 +147,28 @@ public class ClaudeApiService {
             }
 
             if (contentBlocks != null && contentBlocks.isArray()) {
+                // Build the full content blocks list for history preservation
+                List<Map<String, Object>> fullContentBlocks = new ArrayList<>();
+
                 for (JsonNode block : contentBlocks) {
                     String type = block.path("type").asText();
 
                     if ("text".equals(type)) {
                         String text = block.path("text").asText("");
-                        responseMessages.add(new MessageInput(
-                                sessionId, userId, "assistant", text,
-                                Instant.now().toString(), null
-                        ));
+                        fullContentBlocks.add(Map.of("type", "text", "text", text));
                     } else if ("tool_use".equals(type)) {
                         String toolUseId = block.path("id").asText();
                         String toolName = block.path("name").asText();
                         Map<String, Object> input = block.has("input")
                                 ? mapper.convertValue(block.get("input"), Map.class)
                                 : Map.of();
+
+                        fullContentBlocks.add(new LinkedHashMap<>(Map.of(
+                                "type", "tool_use",
+                                "id", toolUseId,
+                                "name", toolName,
+                                "input", input
+                        )));
 
                         toolUses.add(new ToolUseItem(
                                 toolUseId,
@@ -172,6 +179,25 @@ public class ClaudeApiService {
                                 totalToolCount,
                                 Instant.now().toString()
                         ));
+                    }
+                }
+
+                // If there are tool_use blocks, store the full content blocks as structured
+                // data so the tool_use IDs are preserved in history for the next API call.
+                if (!toolUses.isEmpty()) {
+                    responseMessages.add(new MessageInput(
+                            sessionId, userId, "assistant", fullContentBlocks,
+                            Instant.now().toString(), null
+                    ));
+                } else {
+                    // Text-only response — store as plain strings
+                    for (Map<String, Object> cb : fullContentBlocks) {
+                        if ("text".equals(cb.get("type"))) {
+                            responseMessages.add(new MessageInput(
+                                    sessionId, userId, "assistant", cb.get("text"),
+                                    Instant.now().toString(), null
+                            ));
+                        }
                     }
                 }
             }
@@ -228,27 +254,71 @@ public class ClaudeApiService {
         // Claude API uses "user" and "assistant" roles.
         // Tool results are sent as "user" role with tool_result content blocks.
         if ("tool".equals(role)) {
-            // Tool results get special handling — wrap in tool_result content block
-            Map<String, Object> toolResultBlock = new LinkedHashMap<>();
-            toolResultBlock.put("type", "tool_result");
-
-            // Extract tool_use_id from metadata if available
-            if (msg.metadata() != null && msg.metadata().containsKey("tool_use_id")) {
-                toolResultBlock.put("tool_use_id", msg.metadata().get("tool_use_id"));
+            List<Map<String, Object>> toolResultBlocks = buildToolResultBlocks(msg);
+            if (!toolResultBlocks.isEmpty()) {
+                messages.add(Map.of("role", "user", "content", toolResultBlocks));
             }
-            toolResultBlock.put("content", msg.content());
-
-            messages.add(Map.of("role", "user", "content", List.of(toolResultBlock)));
+        } else if (msg.content() instanceof List<?>) {
+            // Structured content blocks (e.g. assistant message with text + tool_use)
+            // Pass through as-is to preserve tool_use IDs for the Claude API
+            messages.add(new LinkedHashMap<>(Map.of("role", role, "content", msg.content())));
         } else {
-            // Merge consecutive same-role messages to avoid API errors
+            // Plain text content — merge consecutive same-role messages to avoid API errors
             if (!messages.isEmpty()) {
                 Map<String, Object> last = messages.get(messages.size() - 1);
                 if (role.equals(last.get("role")) && last.get("content") instanceof String lastContent) {
-                    last.put("content", lastContent + "\n\n" + msg.content());
+                    last.put("content", lastContent + "\n\n" + msg.contentAsString());
                     return;
                 }
             }
-            messages.add(new LinkedHashMap<>(Map.of("role", role, "content", msg.content())));
+            messages.add(new LinkedHashMap<>(Map.of("role", role, "content", msg.contentAsString())));
         }
+    }
+
+    /**
+     * Builds Claude API tool_result content blocks from a tool-role MessageInput.
+     * Each tool result in the content list becomes a separate tool_result block
+     * with the matching tool_use_id, as required by the Claude Messages API.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> buildToolResultBlocks(MessageInput msg) {
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        Object content = msg.content();
+
+        if (content instanceof List<?> resultList) {
+            // Content is a list of tool result maps from TransformToolUseDoneProcessor
+            for (Object entry : resultList) {
+                if (entry instanceof Map<?, ?> resultMap) {
+                    Map<String, Object> block = new LinkedHashMap<>();
+                    block.put("type", "tool_result");
+                    block.put("tool_use_id", resultMap.get("tool_use_id"));
+
+                    // Serialize the result data as JSON string for the content field
+                    Object result = resultMap.get("result");
+                    if (result != null) {
+                        try {
+                            block.put("content", new ObjectMapper().writeValueAsString(result));
+                        } catch (Exception e) {
+                            block.put("content", result.toString());
+                        }
+                    } else {
+                        block.put("content", "{}");
+                    }
+
+                    blocks.add(block);
+                }
+            }
+        } else {
+            // Fallback: content is a plain string — use tool_use_id from metadata if available
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("type", "tool_result");
+            if (msg.metadata() != null && msg.metadata().containsKey("tool_use_id")) {
+                block.put("tool_use_id", msg.metadata().get("tool_use_id"));
+            }
+            block.put("content", msg.contentAsString());
+            blocks.add(block);
+        }
+
+        return blocks;
     }
 }

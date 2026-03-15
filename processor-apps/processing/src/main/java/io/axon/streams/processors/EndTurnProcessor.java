@@ -157,7 +157,7 @@ public class EndTurnProcessor {
 
         return messages.stream()
                 .filter(m -> ROLE_ASSISTANT.equals(m.role()))
-                .map(MessageInput::content)
+                .map(MessageInput::contentAsString)
                 .filter(c -> c != null && !c.isBlank())
                 .collect(Collectors.joining(CONTENT_SEPARATOR));
     }

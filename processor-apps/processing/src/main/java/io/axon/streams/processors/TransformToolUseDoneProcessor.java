@@ -1,6 +1,5 @@
 package io.axon.streams.processors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.axon.streams.config.Topics;
 import io.axon.streams.model.MessageInput;
 import io.axon.streams.model.ToolResultAccumulator;
@@ -133,7 +132,7 @@ public class TransformToolUseDoneProcessor {
      * pipeline never stalls due to a serialisation error.
      */
     static MessageInput toMessageInput(String sessionId, ToolResultAccumulator acc) {
-        String content  = serializeResults(acc.results());
+        List<Map<String, Object>> content = buildContentList(acc.results());
         Map<String, Object> metadata = buildMetadata(acc.results());
 
         return new MessageInput(
@@ -147,35 +146,23 @@ public class TransformToolUseDoneProcessor {
     }
 
     /**
-     * Serialises the list of {@link ToolUseResult} records into a compact JSON
-     * array string. Each entry contains only the fields the LLM needs:
+     * Builds a list of summary maps from {@link ToolUseResult} records.
+     * Each entry contains only the fields the LLM needs:
      * {@code tool_use_id}, {@code name}, {@code result}, and {@code status}.
-     *
-     * <p>Falls back to a plain text summary if JSON serialisation fails.
      */
-    static String serializeResults(List<ToolUseResult> results) {
-        if (results == null || results.isEmpty()) return "[]";
+    static List<Map<String, Object>> buildContentList(List<ToolUseResult> results) {
+        if (results == null || results.isEmpty()) return List.of();
 
-        try {
-            List<Map<String, Object>> summaries = results.stream()
-                    .map(r -> {
-                        Map<String, Object> entry = new LinkedHashMap<>();
-                        entry.put("tool_use_id", r.toolUseId());
-                        entry.put("name",        r.name());
-                        entry.put("result",      r.result() != null ? r.result() : Map.of());
-                        entry.put("status",      r.status());
-                        return entry;
-                    })
-                    .collect(Collectors.toList());
-
-            return JsonSerde.mapper().writeValueAsString(summaries);
-
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize tool results to JSON — using plain text fallback", e);
-            return results.stream()
-                    .map(r -> r.name() + "=" + r.status())
-                    .collect(Collectors.joining(", ", "[", "]"));
-        }
+        return results.stream()
+                .map(r -> {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("tool_use_id", r.toolUseId());
+                    entry.put("name",        r.name());
+                    entry.put("result",      r.result() != null ? r.result() : Map.of());
+                    entry.put("status",      r.status());
+                    return entry;
+                })
+                .collect(Collectors.toList());
     }
 
     /**

@@ -78,7 +78,7 @@ class EndTurnProcessorTest {
     @DisplayName("endTurn=true WITH pending tool calls is NOT forwarded")
     void endTurn_withToolCalls_isDropped() {
         ToolUseItem pendingTool = new ToolUseItem("tuid-1", "tool_1",
-                "get_invoice_balance", Map.of(), "sess-3", TS);
+                "get_invoice_balance", Map.of(), "sess-3", 1, TS);
 
         thinkInput.pipeInput("sess-3", endTurnResponse("sess-3", "user-C",
                 List.of(assistantMsg("sess-3", "user-C", "Let me check...")),

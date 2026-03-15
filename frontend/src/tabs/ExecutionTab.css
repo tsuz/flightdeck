@@ -73,7 +73,7 @@
   font-family: monospace;
 }
 
-/* ── Main Area ── */
+/* ── Main ── */
 .exec-main {
   flex: 1;
   overflow-y: auto;
@@ -113,7 +113,7 @@
   font-family: monospace;
 }
 
-.exec-pipeline-time {
+.exec-pipeline-count {
   font-size: 13px;
   color: var(--text-secondary);
   font-family: monospace;
@@ -154,29 +154,6 @@
   color: var(--warning);
 }
 
-.exec-cost-bar-wrap {
-  width: 100%;
-  height: 4px;
-  background: var(--bg-tertiary);
-  border-radius: 2px;
-  margin-top: 4px;
-  overflow: hidden;
-}
-
-.exec-cost-bar {
-  height: 100%;
-  background: var(--warning);
-  border-radius: 2px;
-  transition: width 0.5s ease-out;
-}
-
-.exec-cost-limit {
-  font-size: 10px;
-  color: var(--text-secondary);
-  font-family: monospace;
-  margin-top: 2px;
-}
-
 /* ── Timeline ── */
 .exec-timeline {
   display: flex;
@@ -188,38 +165,7 @@
   gap: 16px;
 }
 
-/* Entrance animation for steps appearing */
-.exec-step-animate {
-  animation: stepSlideIn 0.35s ease-out both;
-}
-
-@keyframes stepSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Connector line grows downward */
-.exec-line-animate {
-  transform-origin: top;
-  animation: lineGrow 0.25s ease-out both;
-}
-
-@keyframes lineGrow {
-  from {
-    transform: scaleY(0);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-
-/* Rail: dot + line */
+/* Rail */
 .exec-step-rail {
   display: flex;
   flex-direction: column;
@@ -240,51 +186,10 @@
   background: var(--bg-secondary);
 }
 
-.exec-step-dot.status-completed {
-  border-color: var(--success);
-}
-
-.exec-step-dot.status-processing {
-  border-color: var(--info);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.exec-step-dot.status-pending {
-  border-color: var(--text-secondary);
-  opacity: 0.6;
-}
-
-.exec-step-dot.status-failed {
-  border-color: var(--error);
-}
-
-.exec-step-dot.status-retrying {
-  border-color: var(--warning);
-  animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 .exec-step-icon {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   font-family: monospace;
-  color: var(--text-secondary);
-}
-
-.exec-step-dot.status-completed .exec-step-icon {
-  color: var(--success);
-}
-
-.exec-step-dot.status-processing .exec-step-icon {
-  color: var(--info);
-}
-
-.exec-step-dot.status-retrying .exec-step-icon {
-  color: var(--warning);
 }
 
 .exec-step-line {
@@ -294,21 +199,21 @@
   background: var(--border);
 }
 
-/* Step card */
+/* Card */
 .exec-step-card {
   flex: 1;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   overflow: hidden;
 }
 
 .exec-step-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 8px;
+  padding: 8px 14px;
   background: var(--bg-tertiary);
   border: none;
   width: 100%;
@@ -328,7 +233,6 @@
 }
 
 .exec-step-card-header:hover {
-  background: var(--bg-tertiary);
   filter: brightness(1.15);
 }
 
@@ -343,19 +247,20 @@
   transform: rotate(90deg);
 }
 
+/* Topic badge — colored pill */
+.exec-topic-badge {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .exec-step-label {
   font-size: 13px;
   font-weight: 600;
-  flex-shrink: 0;
-}
-
-.exec-step-status {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
   flex-shrink: 0;
 }
 
@@ -370,14 +275,6 @@
   flex: 1;
 }
 
-.exec-step-metrics {
-  font-size: 11px;
-  font-family: monospace;
-  color: var(--warning);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
 .exec-step-time {
   margin-left: auto;
   font-size: 11px;
@@ -386,91 +283,57 @@
   flex-shrink: 0;
 }
 
-/* Status badges */
-.status-pending {
-  background: rgba(161, 161, 170, 0.15);
-  color: var(--text-secondary);
-}
-
-.status-processing {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--info);
-}
-
-.status-completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--success);
-}
-
-.status-failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--error);
-}
-
-.status-retrying {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--warning);
-}
-
-/* Retry badge next to step label */
-.exec-retry-badge {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: rgba(245, 158, 11, 0.2);
-  color: var(--warning);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  margin-left: 6px;
-  vertical-align: middle;
-}
-
-/* Failed card gets a red left border */
-.exec-step-card.card-failed {
-  border-left: 3px solid var(--error);
-}
-
-/* ── Step Detail Body ── */
-.step-detail-body {
-  padding: 14px 16px;
-}
-
-.step-field {
-  margin-bottom: 8px;
-}
-
-.step-field-label {
-  display: block;
+/* Cost badge */
+.exec-cost-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 2px;
-}
-
-.step-field-value {
-  font-size: 13px;
-}
-
-.step-field-value.mono {
   font-family: monospace;
-  color: var(--accent);
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
 }
 
-.step-field-row {
+.exec-cost-tokens {
+  color: var(--text-secondary);
+}
+
+.exec-cost-dollars {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* Latency badge */
+.exec-latency-badge {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--info);
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* ── Event Detail ── */
+.exec-event-detail {
+  padding: 12px 14px;
+}
+
+.exec-event-meta-row {
   display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
+  gap: 16px;
+  margin-bottom: 10px;
 }
 
-.step-subsection {
-  margin-top: 12px;
+.exec-meta-item {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
 }
 
-.step-pre {
+.exec-event-json {
   font-size: 12px;
   font-family: monospace;
   background: var(--bg-primary);
@@ -480,80 +343,6 @@
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.5;
-  margin-top: 4px;
-}
-
-.step-raw {
-  margin-top: 12px;
-}
-
-/* Text block in LLM response */
-.step-text-block {
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 8px 0;
-  color: var(--text-primary);
-}
-
-/* Tool use block in LLM response */
-.step-content-blocks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.step-tool-use-block {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.step-tool-use-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border);
-}
-
-.step-tool-use-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: rgba(99, 102, 241, 0.2);
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.step-tool-use-name {
-  font-size: 13px;
-  font-weight: 600;
-  font-family: monospace;
-  color: var(--text-primary);
-}
-
-.step-tool-use-id {
-  font-size: 11px;
-  font-family: monospace;
-  color: var(--text-secondary);
-  margin-left: auto;
-}
-
-.step-tool-use-block .step-pre {
-  border-radius: 0 0 6px 6px;
-  margin-top: 0;
-}
-
-/* Tool execution status */
-.step-exec-status {
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
+  max-height: 400px;
+  overflow-y: auto;
 }

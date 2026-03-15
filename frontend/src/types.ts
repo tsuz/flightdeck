@@ -46,6 +46,23 @@ export interface Conversation {
   steps: PipelineStep[];
 }
 
+export interface PipelineEvent {
+  topic: string;
+  sessionId: string;
+  timestamp: string;
+  partition: number;
+  offset: number;
+  value?: Record<string, unknown>;
+  rawValue?: string;
+  cost?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    dollars?: number;
+    endTurn?: boolean;
+  };
+  latencyMs?: number;
+}
+
 export interface LogEntry {
   id: string;
   level: "info" | "warn" | "error" | "debug";
@@ -60,4 +77,5 @@ export type Tab = "chat" | "execution" | "monitoring" | "logs";
 export type WsMessage =
   | { type: "chat_response"; data: ChatMessage }
   | { type: "conversation_update"; data: Conversation }
+  | { type: "pipeline_event"; data: PipelineEvent }
   | { type: "log"; data: LogEntry };

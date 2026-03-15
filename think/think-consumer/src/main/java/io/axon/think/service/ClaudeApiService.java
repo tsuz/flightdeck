@@ -77,11 +77,13 @@ public class ClaudeApiService {
                     .build();
 
             log.info("[{}] Calling Claude API: model={} messages={}", sessionId, model, messages.size());
+            log.debug("[{}] Request body:\n{}", sessionId, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(requestBody));
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
                 log.error("[{}] Claude API returned status {}: {}", sessionId, response.statusCode(), response.body());
+                log.error("[{}] Request messages:\n{}", sessionId, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(messages));
                 throw new RuntimeException("Claude API error: HTTP " + response.statusCode());
             }
 

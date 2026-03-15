@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.axon.think.config.AppConfig;
 import io.axon.think.model.FullSessionContext;
+import io.axon.think.model.MessageInput;
 import io.axon.think.model.ThinkResponse;
 import io.axon.think.service.ClaudeApiService;
 import io.axon.think.service.RagService;
@@ -21,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -124,7 +126,32 @@ public class ThinkConsumer implements AutoCloseable {
         // 5. Call Claude API
         ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
 
-        // 6. Produce to think-request-response
+        // 6. If latestInput is a tool-result message, prepend it to the response messages
+        //    so that AccumulateSessionContextProcessor stores it in history.
+        //    This ensures the conversation has the correct ordering:
+        //    [assistant(tool_use), user(tool_result), assistant(response)]
+        if (context.latestInput() != null && "tool".equals(context.latestInput().role())) {
+            List<MessageInput> augmentedMessages = new ArrayList<>();
+            augmentedMessages.add(context.latestInput());
+            if (thinkResponse.messages() != null) {
+                augmentedMessages.addAll(thinkResponse.messages());
+            }
+            thinkResponse = new ThinkResponse(
+                    thinkResponse.sessionId(),
+                    thinkResponse.userId(),
+                    thinkResponse.cost(),
+                    thinkResponse.inputTokens(),
+                    thinkResponse.outputTokens(),
+                    augmentedMessages,
+                    thinkResponse.toolUses(),
+                    thinkResponse.endTurn(),
+                    thinkResponse.timestamp()
+            );
+            log.info("[{}] Prepended tool-result message to ThinkResponse (total messages: {})",
+                    sessionId, augmentedMessages.size());
+        }
+
+        // 7. Produce to think-request-response
         String outputJson = mapper.writeValueAsString(thinkResponse);
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
                 AppConfig.OUTPUT_TOPIC, sessionId, outputJson);

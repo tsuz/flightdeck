@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { WsMessage, ChatMessage, Conversation, LogEntry } from "./types";
+import type { WsMessage, ChatMessage, Conversation, LogEntry, PipelineEvent } from "./types";
 
 const WS_URL = `ws://${window.location.host}/ws`;
 const RECONNECT_INTERVAL = 3000;
@@ -30,6 +30,7 @@ export function useWebSocket() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [pipelineEvents, setPipelineEvents] = useState<PipelineEvent[]>([]);
   const [thinking, setThinking] = useState(false);
   const [sessionId, setSessionId] = useState<string>(generateSessionId);
   const sessionIdRef = useRef(sessionId);
@@ -52,7 +53,6 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       setConnected(true);
-      // Subscribe to current session on connect
       ws.send(JSON.stringify({ type: "subscribe", session_id: sessionIdRef.current }));
       console.log("WebSocket connected, subscribed to", sessionIdRef.current);
     };
@@ -75,6 +75,9 @@ export function useWebSocket() {
               }
               return [...prev, msg.data];
             });
+            break;
+          case "pipeline_event":
+            setPipelineEvents((prev) => [...prev, msg.data]);
             break;
           case "log":
             setLogs((prev) => [...prev, msg.data]);
@@ -106,7 +109,6 @@ export function useWebSocket() {
   const sendMessage = useCallback(async (content: string) => {
     const now = new Date().toISOString();
 
-    // Add user message to local state immediately
     const localMsg: ChatMessage = {
       id: generateId(),
       role: "user",
@@ -116,7 +118,6 @@ export function useWebSocket() {
     setMessages((prev) => [...prev, localMsg]);
     setThinking(true);
 
-    // Minimal payload — the API enriches it before producing to Kafka
     const payload = {
       session_id: sessionId,
       content,
@@ -139,13 +140,14 @@ export function useWebSocket() {
     }
   }, [sessionId]);
 
-  /** Start a new conversation with a fresh session ID */
   const newChat = useCallback(() => {
-    const newId = generateSessionId();
-    setSessionId(newId);
+    setSessionId(generateSessionId());
     setMessages([]);
     setThinking(false);
   }, []);
 
-  return { connected, messages, conversations, logs, thinking, sessionId, sendMessage, newChat };
+  return {
+    connected, messages, conversations, logs, pipelineEvents,
+    thinking, sessionId, sendMessage, newChat,
+  };
 }

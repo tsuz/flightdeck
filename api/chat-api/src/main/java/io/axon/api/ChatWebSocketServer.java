@@ -146,6 +146,19 @@ public class ChatWebSocketServer extends WebSocketServer {
         }
     }
 
+    /**
+     * Broadcasts a pre-built pipeline_event envelope to all connected clients.
+     * Pipeline events are sent to all clients (not session-filtered) so the
+     * Execution tab can show the full pipeline activity.
+     */
+    public void broadcastPipelineEvent(String sessionId, String envelope) {
+        for (WebSocket ws : getConnections()) {
+            if (ws.isOpen()) {
+                ws.send(envelope);
+            }
+        }
+    }
+
     private void unsubscribe(WebSocket conn) {
         String prevSession = clientSessions.remove(conn);
         if (prevSession != null) {

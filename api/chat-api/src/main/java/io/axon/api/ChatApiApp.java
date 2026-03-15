@@ -35,16 +35,23 @@ public class ChatApiApp {
         ChatWebSocketServer wsServer = new ChatWebSocketServer(WS_PORT);
         wsServer.start();
 
-        // 4. Kafka consumer (message-output → WebSocket broadcast)
+        // 4. Kafka consumer (message-output → WebSocket chat response)
         OutputConsumer outputConsumer = new OutputConsumer(wsServer);
-        Thread consumerThread = new Thread(outputConsumer, "output-consumer");
-        consumerThread.setDaemon(true);
-        consumerThread.start();
+        Thread outputThread = new Thread(outputConsumer, "output-consumer");
+        outputThread.setDaemon(true);
+        outputThread.start();
+
+        // 5. Kafka consumer (all pipeline topics → WebSocket pipeline events)
+        PipelineConsumer pipelineConsumer = new PipelineConsumer(wsServer);
+        Thread pipelineThread = new Thread(pipelineConsumer, "pipeline-consumer");
+        pipelineThread.setDaemon(true);
+        pipelineThread.start();
 
         // Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Shutting down...");
             outputConsumer.stop();
+            pipelineConsumer.stop();
             try { wsServer.stop(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             httpServer.stop(2);
             producer.close();

@@ -46,12 +46,15 @@ class EnrichInputMessageProcessorTest {
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
 
-        // Create the shared memoir KTable (same as AxonStreamsApp does)
+        // Create shared KTables (same as AxonStreamsApp does)
         KTable<String, String> memoirTable = builder.table(
                 Topics.MEMOIR_CONTEXT,
                 Consumed.with(Serdes.String(), Serdes.String()));
+        KTable<String, SessionContext> contextTable = builder.table(
+                Topics.SESSION_CONTEXT,
+                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)));
 
-        EnrichInputMessageProcessor.register(builder, memoirTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, contextTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");

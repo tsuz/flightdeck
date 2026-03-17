@@ -94,9 +94,11 @@ public class UpdateMemoirConsumer implements AutoCloseable {
         // 2. Call Claude to update memoir
         String updatedMemoir = memoirService.updateMemoir(sessionId, snapshot);
 
-        // 3. Produce updated memoir to memoir-context
+        // 3. Produce updated memoir to memoir-context, keyed by userId
+        //    so it persists across sessions for the same user
+        String outputKey = snapshot.userId() != null ? snapshot.userId() : sessionId;
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
-                AppConfig.OUTPUT_TOPIC, sessionId, updatedMemoir);
+                AppConfig.OUTPUT_TOPIC, outputKey, updatedMemoir);
 
         producer.send(outputRecord, (metadata, exception) -> {
             if (exception != null) {

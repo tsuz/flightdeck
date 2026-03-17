@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record MemoirSessionEnd(
         @JsonProperty("session_id")      String sessionId,
+        @JsonProperty("user_id")         String userId,
         @JsonProperty("memoir_context")   String memoirContext,
         @JsonProperty("think_response")   ThinkResponse thinkResponse,
         @JsonProperty("timestamp")        String timestamp

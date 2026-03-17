@@ -10,6 +10,7 @@ import io.axon.streams.processors.SessionCostAggregationProcessor;
 import io.axon.streams.processors.MemoirSessionEndProcessor;
 import io.axon.streams.processors.SessionEndProcessor;
 import io.axon.streams.processors.TransformToolUseDoneProcessor;
+import io.axon.streams.model.SessionContext;
 import io.axon.streams.model.ThinkResponse;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -37,6 +38,7 @@ public class AxonStreamsApp {
 
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
+    static final String SESSION_CONTEXT_STORE = "session-context-store";
 
     public static void main(String[] args) {
         Properties props = buildConfig();
@@ -101,16 +103,26 @@ public class AxonStreamsApp {
                         .withValueSerde(JsonSerde.of(ThinkResponse.class))
         );
 
+        // ── Shared KTable: session-context (used by Enrich + Memoir processors) ─
+        KTable<String, SessionContext> sessionContextTable = builder.table(
+                Topics.SESSION_CONTEXT,
+                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)),
+                Materialized.<String, SessionContext>as(
+                                Stores.persistentKeyValueStore(SESSION_CONTEXT_STORE))
+                        .withKeySerde(Serdes.String())
+                        .withValueSerde(JsonSerde.of(SessionContext.class))
+        );
+
         // ── Register each processor fragment ──────────────────────────────────
         AccumulateSessionContextProcessor.register(builder, thinkStream);
-        EnrichInputMessageProcessor.register(builder, memoirTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, sessionContextTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
         SessionCostAggregationProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream);
         AggregateToolExecutionResultProcessor.register(builder);
         TransformToolUseDoneProcessor.register(builder);
         SessionEndProcessor.register(builder, thinkStream);
-        MemoirSessionEndProcessor.register(builder, memoirTable, thinkTable);
+        MemoirSessionEndProcessor.register(builder, memoirTable, sessionContextTable, thinkTable);
 
         return builder.build();
     }

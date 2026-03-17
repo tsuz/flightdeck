@@ -8,7 +8,6 @@ import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,12 +35,13 @@ public class EnrichInputMessageProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(EnrichInputMessageProcessor.class);
 
-    public static final String ENRICH_CONTEXT_STORE = "enrich-message-context-store";
-
     /**
-     * @param memoirTable shared KTable created in AxonStreamsApp
+     * @param memoirTable   shared KTable for memoir-context (keyed by userId)
+     * @param contextTable  shared KTable for session-context (keyed by sessionId)
      */
-    public static void register(StreamsBuilder builder, KTable<String, String> memoirTable) {
+    public static void register(StreamsBuilder builder,
+                                KTable<String, String> memoirTable,
+                                KTable<String, SessionContext> contextTable) {
 
         // ── Left side: incoming user messages ────────────────────────────────
         KStream<String, MessageInput> inputStream = builder.stream(
@@ -49,21 +49,13 @@ public class EnrichInputMessageProcessor {
                 Consumed.with(Serdes.String(), JsonSerde.of(MessageInput.class))
         );
 
-        // ── Right side 1: conversation history KTable ────────────────────────
-        KTable<String, SessionContext> contextTable = builder.table(
-                Topics.SESSION_CONTEXT,
-                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)),
-                Materialized.<String, SessionContext>as(
-                        Stores.persistentKeyValueStore(ENRICH_CONTEXT_STORE))
-                        .withKeySerde(Serdes.String())
-                        .withValueSerde(JsonSerde.of(SessionContext.class))
-        );
-
         // ── Re-key by session_id from the message value ──────────────────────
         KStream<String, MessageInput> keyedStream = inputStream
                 .selectKey((key, msg) -> msg.sessionId());
 
         // ── Two-stage left join: message ⟕ session-context ⟕ memoir-context ─
+        //    First join is by session_id. Second join is by user_id (memoir
+        //    persists across sessions), then re-key back to session_id for output.
         keyedStream
                 .leftJoin(
                         contextTable,
@@ -74,6 +66,9 @@ public class EnrichInputMessageProcessor {
                                 JsonSerde.of(SessionContext.class)
                         )
                 )
+                // Re-key by userId for the memoir join
+                .selectKey((sessionId, full) ->
+                        full.userId() != null ? full.userId() : sessionId)
                 .leftJoin(
                         memoirTable,
                         EnrichInputMessageProcessor::enrichWithMemoir,
@@ -83,6 +78,8 @@ public class EnrichInputMessageProcessor {
                                 Serdes.String()
                         )
                 )
+                // Re-key back to sessionId for downstream consumers
+                .selectKey((userId, full) -> full.sessionId())
                 .peek((sessionId, full) ->
                         log.info("[{}] Enriched — history_size={} has_memoir={} first_turn={}",
                                 sessionId,

@@ -116,8 +116,8 @@ public class ThinkConsumer implements AutoCloseable {
         String latestContent = context.latestInput() != null ? context.latestInput().contentAsString() : "";
         List<String> ragChunks = ragService.retrieveContext(latestContent, sessionId);
 
-        // 3. Build system prompt with RAG context
-        String systemPrompt = buildSystemPrompt(ragChunks);
+        // 3. Build system prompt with RAG context and memoir
+        String systemPrompt = buildSystemPrompt(ragChunks, context.memoirContext());
 
         // 4. Convert history + latest input to Claude message format
         List<Map<String, Object>> claudeMessages = ClaudeApiService.toClaudeMessages(
@@ -126,17 +126,11 @@ public class ThinkConsumer implements AutoCloseable {
         // 5. Call Claude API
         ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
 
-        // 6. Prepend the full conversation (history + latestInput) to the response
-        //    so that downstream processors (memoir, session-context) see all
-        //    messages that were sent to the LLM, not just the latest exchange.
-        {
+        // 6. Prepend the user's latestInput to the response so downstream
+        //    processors see the request-response pair for this turn.
+        if (context.latestInput() != null) {
             List<MessageInput> augmentedMessages = new ArrayList<>();
-            if (context.history() != null) {
-                augmentedMessages.addAll(context.history());
-            }
-            if (context.latestInput() != null) {
-                augmentedMessages.add(context.latestInput());
-            }
+            augmentedMessages.add(context.latestInput());
             if (thinkResponse.messages() != null) {
                 augmentedMessages.addAll(thinkResponse.messages());
             }
@@ -151,8 +145,6 @@ public class ThinkConsumer implements AutoCloseable {
                     thinkResponse.endTurn(),
                     thinkResponse.timestamp()
             );
-            log.info("[{}] ThinkResponse includes full conversation (total messages: {})",
-                    sessionId, augmentedMessages.size());
         }
 
         // 7. Produce to think-request-response
@@ -174,18 +166,24 @@ public class ThinkConsumer implements AutoCloseable {
     /**
      * Builds the system prompt, injecting RAG context if available.
      */
-    static String buildSystemPrompt(List<String> ragChunks) {
-        if (ragChunks == null || ragChunks.isEmpty()) {
-            return String.format(SYSTEM_PROMPT_TEMPLATE, "");
+    static String buildSystemPrompt(List<String> ragChunks, String memoirContext) {
+        StringBuilder extra = new StringBuilder();
+
+        if (memoirContext != null && !memoirContext.isBlank()) {
+            extra.append("\n\nUser memoir (known facts about this user from previous sessions):\n");
+            extra.append(memoirContext);
+            extra.append("\n\nUse the memoir to personalize your responses.");
         }
 
-        StringBuilder ragContext = new StringBuilder("\n\nRelevant context from knowledge base:\n");
-        for (int i = 0; i < ragChunks.size(); i++) {
-            ragContext.append(String.format("\n--- Document %d ---\n%s\n", i + 1, ragChunks.get(i)));
+        if (ragChunks != null && !ragChunks.isEmpty()) {
+            extra.append("\n\nRelevant context from knowledge base:\n");
+            for (int i = 0; i < ragChunks.size(); i++) {
+                extra.append(String.format("\n--- Document %d ---\n%s\n", i + 1, ragChunks.get(i)));
+            }
+            extra.append("\nUse the above context to inform your response when relevant.");
         }
-        ragContext.append("\nUse the above context to inform your response when relevant.");
 
-        return String.format(SYSTEM_PROMPT_TEMPLATE, ragContext.toString());
+        return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());
     }
 
     public void shutdown() {

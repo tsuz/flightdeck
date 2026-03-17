@@ -1,16 +1,27 @@
 package io.axon.streams;
 
+import io.axon.streams.config.Topics;
 import io.axon.streams.processors.AccumulateSessionContextProcessor;
 import io.axon.streams.processors.AggregateToolExecutionResultProcessor;
 import io.axon.streams.processors.EndTurnProcessor;
 import io.axon.streams.processors.EnrichInputMessageProcessor;
 import io.axon.streams.processors.ExtractToolUseItemsProcessor;
 import io.axon.streams.processors.SessionCostAggregationProcessor;
+import io.axon.streams.processors.MemoirSessionEndProcessor;
+import io.axon.streams.processors.SessionEndProcessor;
 import io.axon.streams.processors.TransformToolUseDoneProcessor;
+import io.axon.streams.model.ThinkResponse;
+import io.axon.streams.serdes.JsonSerde;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,14 +30,13 @@ import java.util.Properties;
 /**
  * Entry-point: wires all processor fragments into a single Kafka Streams topology
  * and starts the application.
- *
- * As additional beige processors are implemented (AccumulateSessionContext,
- * Think, ToolExecution, ToolResultAggregation, ToolLatencyAggregation) each
- * one is registered here with a single call.
  */
 public class AxonStreamsApp {
 
     private static final Logger log = LoggerFactory.getLogger(AxonStreamsApp.class);
+
+    static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
+    static final String THINK_RESPONSE_STORE = "think-response-store";
 
     public static void main(String[] args) {
         Properties props = buildConfig();
@@ -66,15 +76,41 @@ public class AxonStreamsApp {
     public static Topology buildTopology() {
         StreamsBuilder builder = new StreamsBuilder();
 
-        // ── Register each beige processor fragment ───────────────────────────
-        AccumulateSessionContextProcessor.register(builder);
-        EnrichInputMessageProcessor.register(builder);
-        ExtractToolUseItemsProcessor.register(builder);
-        SessionCostAggregationProcessor.register(builder);
-        EndTurnProcessor.register(builder);
+        // ── Shared KTable: memoir-context (used by multiple processors) ───────
+        KTable<String, String> memoirTable = builder.table(
+                Topics.MEMOIR_CONTEXT,
+                Consumed.with(Serdes.String(), Serdes.String()),
+                Materialized.<String, String>as(
+                                Stores.persistentKeyValueStore(MEMOIR_CONTEXT_STORE))
+                        .withKeySerde(Serdes.String())
+                        .withValueSerde(Serdes.String())
+        );
+
+        // ── Shared KStream + KTable: think-request-response ─────────────────
+        //    ONE source registration — shared across all processors that read
+        //    this topic, avoiding TopologyException conflicts.
+        KStream<String, ThinkResponse> thinkStream = builder.stream(
+                Topics.THINK_REQUEST_RESPONSE,
+                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
+        );
+
+        KTable<String, ThinkResponse> thinkTable = thinkStream.toTable(
+                Materialized.<String, ThinkResponse>as(
+                                Stores.persistentKeyValueStore(THINK_RESPONSE_STORE))
+                        .withKeySerde(Serdes.String())
+                        .withValueSerde(JsonSerde.of(ThinkResponse.class))
+        );
+
+        // ── Register each processor fragment ──────────────────────────────────
+        AccumulateSessionContextProcessor.register(builder, thinkStream);
+        EnrichInputMessageProcessor.register(builder, memoirTable);
+        ExtractToolUseItemsProcessor.register(builder, thinkStream);
+        SessionCostAggregationProcessor.register(builder, thinkStream);
+        EndTurnProcessor.register(builder, thinkStream);
         AggregateToolExecutionResultProcessor.register(builder);
         TransformToolUseDoneProcessor.register(builder);
-        // AggregateToolLatencyProcessor.register(builder);
+        SessionEndProcessor.register(builder, thinkStream);
+        MemoirSessionEndProcessor.register(builder, memoirTable, thinkTable);
 
         return builder.build();
     }

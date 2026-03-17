@@ -32,7 +32,10 @@ public class MonitoringApp {
             "tool-use-all-complete",
             "tool-use-latency",
             "session-cost",
-            "message-output"
+            "message-output",
+            "session-end",
+            "memoir-context",
+            "memoir-context-session-end"
     );
 
     private static final String BOOTSTRAP_SERVERS =

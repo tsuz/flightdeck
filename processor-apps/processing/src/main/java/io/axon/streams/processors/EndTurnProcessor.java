@@ -69,12 +69,7 @@ public class EndTurnProcessor {
     /** Default source-agent tag when the ThinkResponse carries no agent identifier. */
     static final String DEFAULT_AGENT = "agent-1";
 
-    public static void register(StreamsBuilder builder) {
-
-        KStream<String, ThinkResponse> thinkStream = builder.stream(
-                Topics.THINK_REQUEST_RESPONSE,
-                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
-        );
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
 
         thinkStream
                 // ── Step 1: filter — only fully-resolved end-turn responses ──

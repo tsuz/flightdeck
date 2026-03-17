@@ -5,6 +5,8 @@ import io.axon.streams.model.*;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.test.TestRecord;
 import org.junit.jupiter.api.*;
 
@@ -19,13 +21,13 @@ class AccumulateSessionContextProcessorTest {
     private TopologyTestDriver driver;
     private TestInputTopic<String, ThinkResponse>      thinkInput;
     private TestOutputTopic<String, SessionContext>    contextOutput;
-    private TestInputTopic<String, MessageInput>       messageInput;
-    private TestOutputTopic<String, FullSessionContext> fullContextOutput;
-
     @BeforeEach
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
-        AccumulateSessionContextProcessor.register(builder);
+        KStream<String, ThinkResponse> thinkStream = builder.stream(
+                Topics.THINK_REQUEST_RESPONSE,
+                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
+        AccumulateSessionContextProcessor.register(builder, thinkStream);
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-accumulate");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:9092");
@@ -35,10 +37,6 @@ class AccumulateSessionContextProcessorTest {
                 Serdes.String().serializer(), JsonSerde.of(ThinkResponse.class).serializer());
         contextOutput    = driver.createOutputTopic(Topics.SESSION_CONTEXT,
                 Serdes.String().deserializer(), JsonSerde.of(SessionContext.class).deserializer());
-        messageInput     = driver.createInputTopic(Topics.MESSAGE_INPUT,
-                Serdes.String().serializer(), JsonSerde.of(MessageInput.class).serializer());
-        fullContextOutput = driver.createOutputTopic(Topics.ENRICHED_MESSAGE_INPUT,
-                Serdes.String().deserializer(), JsonSerde.of(FullSessionContext.class).deserializer());
     }
 
     @AfterEach
@@ -106,41 +104,6 @@ class AccumulateSessionContextProcessorTest {
 
         assertThat(ctxA.history()).hasSize(2);
         assertThat(ctxB.history()).hasSize(1);
-    }
-
-    // ── Join ──────────────────────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("First-ever user message produces FullSessionContext with empty history")
-    void firstUserMessage_emptyHistory() {
-        messageInput.pipeInput("sess-new", userMsg("sess-new", "u", "Hello!"));
-
-        FullSessionContext full = fullContextOutput.readRecord().value();
-        assertThat(full.sessionId()).isEqualTo("sess-new");
-        assertThat(full.history()).isEmpty();
-        assertThat(full.latestInput().content()).isEqualTo("Hello!");
-    }
-
-    @Test
-    @DisplayName("User message after an LLM turn carries existing history")
-    void userMessage_withPriorHistory() {
-        thinkInput.pipeInput("sess-h", thinkResp("sess-h", "u", 0.03, List.of(
-                assistantMsg("sess-h", "u", "Prior answer."))));
-        contextOutput.readRecordsToList(); // drain changelog
-
-        messageInput.pipeInput("sess-h", userMsg("sess-h", "u", "Follow-up?"));
-
-        FullSessionContext full = fullContextOutput.readRecord().value();
-        assertThat(full.history()).hasSize(1);
-        assertThat(full.history().get(0).content()).isEqualTo("Prior answer.");
-        assertThat(full.latestInput().content()).isEqualTo("Follow-up?");
-    }
-
-    @Test
-    @DisplayName("Output key is the session_id")
-    void joinPreservesKey() {
-        messageInput.pipeInput("key-test", userMsg("key-test", "u", "hi"));
-        assertThat(fullContextOutput.readRecord().key()).isEqualTo("key-test");
     }
 
     // ── Helper unit tests ─────────────────────────────────────────────────────

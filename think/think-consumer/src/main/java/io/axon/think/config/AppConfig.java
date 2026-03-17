@@ -29,7 +29,7 @@ public final class AppConfig {
             env("CLAUDE_API_URL", "https://api.anthropic.com/v1/messages");
 
     public static final String CLAUDE_MODEL =
-            env("CLAUDE_MODEL", "claude-sonnet-4-20250514");
+            env("CLAUDE_MODEL", "claude-haiku-4-5-20251001");
 
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));

@@ -57,20 +57,16 @@ public class AccumulateSessionContextProcessor {
     public static final String MESSAGE_CONTEXT_STORE      = "message-context-store";
     public static final String MESSAGE_CONTEXT_JOIN_STORE = "message-context-join-store";
 
-    public static void register(StreamsBuilder builder) {
-        registerAggregation(builder);
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
+        registerAggregation(builder, thinkStream);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Fragment 1 — Aggregate ThinkResponses into a per-session SessionContext
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static KTable<String, SessionContext> registerAggregation(StreamsBuilder builder) {
-
-        KStream<String, ThinkResponse> thinkStream = builder.stream(
-                Topics.THINK_REQUEST_RESPONSE,
-                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
-        );
+    private static KTable<String, SessionContext> registerAggregation(StreamsBuilder builder,
+                                                                      KStream<String, ThinkResponse> thinkStream) {
 
         KTable<String, SessionContext> contextTable = thinkStream
                 .filter((key, value) -> key != null && value != null)

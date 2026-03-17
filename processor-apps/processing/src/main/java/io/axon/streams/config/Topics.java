@@ -43,6 +43,17 @@ public final class Topics {
     /** Per-tool latency metrics, keyed by tool_name */
     public static final String TOOL_USE_LATENCY         = "tool-use-latency";
 
+    // ── Session lifecycle ──────────────────────────────────────────────────────
+    /** Emitted when a session has been inactive for a configured period */
+    public static final String SESSION_END              = "session-end";
+
+    // ── Memoir ───────────────────────────────────────────────────────────────
+    /** Long-term memoir / summary context per session (KTable) */
+    public static final String MEMOIR_CONTEXT           = "memoir-context";
+
+    /** Joined snapshot emitted on session end: memoir + last response */
+    public static final String MEMOIR_CONTEXT_SESSION_END = "memoir-context-session-end";
+
     // ── Outbound ──────────────────────────────────────────────────────────────
     /** Final responses sent back to the user-facing layer */
     public static final String MESSAGE_OUTPUT           = "message-output";

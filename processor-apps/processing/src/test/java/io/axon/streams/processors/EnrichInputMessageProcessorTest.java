@@ -5,6 +5,8 @@ import io.axon.streams.model.*;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.test.TestRecord;
 import org.junit.jupiter.api.*;
 
@@ -37,10 +39,19 @@ class EnrichInputMessageProcessorTest {
     /** Captures the enriched FullSessionContext records */
     private TestOutputTopic<String, FullSessionContext> fullContextOutput;
 
+    /** Seeds the memoir-context KTable */
+    private TestInputTopic<String, String> memoirInput;
+
     @BeforeEach
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
-        EnrichInputMessageProcessor.register(builder);
+
+        // Create the shared memoir KTable (same as AxonStreamsApp does)
+        KTable<String, String> memoirTable = builder.table(
+                Topics.MEMOIR_CONTEXT,
+                Consumed.with(Serdes.String(), Serdes.String()));
+
+        EnrichInputMessageProcessor.register(builder, memoirTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");
@@ -58,6 +69,11 @@ class EnrichInputMessageProcessorTest {
                 Topics.SESSION_CONTEXT,
                 Serdes.String().serializer(),
                 JsonSerde.of(SessionContext.class).serializer());
+
+        memoirInput = driver.createInputTopic(
+                Topics.MEMOIR_CONTEXT,
+                Serdes.String().serializer(),
+                Serdes.String().serializer());
 
         fullContextOutput = driver.createOutputTopic(
                 Topics.ENRICHED_MESSAGE_INPUT,
@@ -190,7 +206,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): null context produces empty history")
     void enrich_nullContext_emptyHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
-        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, null);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, null);
         assertThat(result.history()).isEmpty();
         assertThat(result.latestInput()).isEqualTo(msg);
         assertThat(result.sessionId()).isEqualTo("s");
@@ -201,7 +217,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_contextWithNullHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
         SessionContext ctx = new SessionContext("s", "u", 0, 0, List.of(), null, TS);
-        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, ctx);
         assertThat(result.history()).isEmpty();
     }
 
@@ -211,7 +227,7 @@ class EnrichInputMessageProcessorTest {
         MessageInput msg = userMsg("s", "u", "new");
         MessageInput prior = assistantMsg("s", "u", "old");
         SessionContext ctx = context("s", "u", List.of(prior));
-        FullSessionContext result = EnrichInputMessageProcessor.enrich(msg, ctx);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, ctx);
         assertThat(result.history()).containsExactly(prior);
         assertThat(result.latestInput()).isEqualTo(msg);
     }
@@ -221,7 +237,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_userIdFromMessage() {
         MessageInput msg = userMsg("s", "msg-user", "hi");
         SessionContext ctx = context("s", "ctx-user", List.of());
-        assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("msg-user");
+        assertThat(EnrichInputMessageProcessor.enrichWithContext(msg, ctx).userId()).isEqualTo("msg-user");
     }
 
     @Test
@@ -229,7 +245,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_userIdFallback() {
         MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
         SessionContext ctx = context("s", "ctx-user", List.of());
-        assertThat(EnrichInputMessageProcessor.enrich(msg, ctx).userId()).isEqualTo("ctx-user");
+        assertThat(EnrichInputMessageProcessor.enrichWithContext(msg, ctx).userId()).isEqualTo("ctx-user");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

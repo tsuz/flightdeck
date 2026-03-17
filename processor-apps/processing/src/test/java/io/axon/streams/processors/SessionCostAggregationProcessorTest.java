@@ -8,6 +8,8 @@ import io.axon.streams.model.ToolUseItem;
 import io.axon.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.test.TestRecord;
 import org.junit.jupiter.api.*;
 
@@ -26,7 +28,10 @@ class SessionCostAggregationProcessorTest {
     @BeforeEach
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
-        SessionCostAggregationProcessor.register(builder);
+        KStream<String, ThinkResponse> thinkStream = builder.stream(
+                Topics.THINK_REQUEST_RESPONSE,
+                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
+        SessionCostAggregationProcessor.register(builder, thinkStream);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-session-cost");

@@ -43,13 +43,7 @@ public class ExtractToolUseItemsProcessor {
      * Registers the topology fragment onto the provided {@link StreamsBuilder}.
      * Call this from your main topology builder class.
      */
-    public static void register(StreamsBuilder builder) {
-
-        // ── Source: LLM responses ────────────────────────────────────────────
-        KStream<String, ThinkResponse> thinkStream = builder.stream(
-                Topics.THINK_REQUEST_RESPONSE,
-                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
-        );
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
 
         // ── Step 1: filter — keep only responses that carry tool-use blocks ──
         KStream<String, ThinkResponse> withToolUses = thinkStream

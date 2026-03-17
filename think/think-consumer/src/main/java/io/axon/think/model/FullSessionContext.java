@@ -7,9 +7,9 @@ import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record FullSessionContext(
-        @JsonProperty("session_id")   String sessionId,
-        @JsonProperty("user_id")      String userId,
-        @JsonProperty("history")      List<MessageInput> history,
-        @JsonProperty("latest_input") MessageInput latestInput,
-        @JsonProperty("timestamp")    String timestamp
+        @JsonProperty("session_id")      String sessionId,
+        @JsonProperty("user_id")         String userId,
+        @JsonProperty("history")         List<MessageInput> history,
+        @JsonProperty("latest_input")    MessageInput latestInput,
+        @JsonProperty("timestamp")       String timestamp
 ) {}

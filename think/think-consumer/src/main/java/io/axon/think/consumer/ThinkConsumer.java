@@ -126,13 +126,17 @@ public class ThinkConsumer implements AutoCloseable {
         // 5. Call Claude API
         ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
 
-        // 6. If latestInput is a tool-result message, prepend it to the response messages
-        //    so that AccumulateSessionContextProcessor stores it in history.
-        //    This ensures the conversation has the correct ordering:
-        //    [assistant(tool_use), user(tool_result), assistant(response)]
-        if (context.latestInput() != null && "tool".equals(context.latestInput().role())) {
+        // 6. Prepend the full conversation (history + latestInput) to the response
+        //    so that downstream processors (memoir, session-context) see all
+        //    messages that were sent to the LLM, not just the latest exchange.
+        {
             List<MessageInput> augmentedMessages = new ArrayList<>();
-            augmentedMessages.add(context.latestInput());
+            if (context.history() != null) {
+                augmentedMessages.addAll(context.history());
+            }
+            if (context.latestInput() != null) {
+                augmentedMessages.add(context.latestInput());
+            }
             if (thinkResponse.messages() != null) {
                 augmentedMessages.addAll(thinkResponse.messages());
             }
@@ -147,7 +151,7 @@ public class ThinkConsumer implements AutoCloseable {
                     thinkResponse.endTurn(),
                     thinkResponse.timestamp()
             );
-            log.info("[{}] Prepended tool-result message to ThinkResponse (total messages: {})",
+            log.info("[{}] ThinkResponse includes full conversation (total messages: {})",
                     sessionId, augmentedMessages.size());
         }
 

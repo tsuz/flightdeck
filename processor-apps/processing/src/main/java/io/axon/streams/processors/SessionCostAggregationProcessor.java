@@ -72,12 +72,7 @@ public class SessionCostAggregationProcessor {
     /** Sentinel cost value that signals a session-close / tombstone event. */
     static final double SESSION_CLOSE_SENTINEL = -1.0;
 
-    public static void register(StreamsBuilder builder) {
-
-        KStream<String, ThinkResponse> thinkStream = builder.stream(
-                Topics.THINK_REQUEST_RESPONSE,
-                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class))
-        );
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
 
         // ── Separate close signals from normal LLM responses ─────────────────
         // KStream.branch() was removed in Kafka Streams 4.x; use split() + Branched instead.

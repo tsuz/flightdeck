@@ -9,6 +9,7 @@ Usage:
 """
 
 import json
+import os
 from pathlib import Path
 
 from qdrant_client import QdrantClient
@@ -16,7 +17,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
 
 COLLECTION_NAME = "prompts"
-QDRANT_URL = "http://localhost:6333"
+QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # 384-dim, fast and lightweight
 VECTOR_SIZE = 384
 

@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Entry point for the Think Consumer service.
  * <p>
- * Reads from {@code enriched-message-input}, calls RAG + Claude API,
+ * Reads from {@code enriched-message-input}, calls Claude API,
  * and produces {@code ThinkResponse} to {@code think-request-response}.
  */
 public class ThinkConsumerApp {
@@ -29,7 +29,6 @@ public class ThinkConsumerApp {
         log.info("  Input topic: {}", AppConfig.INPUT_TOPIC);
         log.info("  Output topic:{}", AppConfig.OUTPUT_TOPIC);
         log.info("  Claude model:{}", AppConfig.CLAUDE_MODEL);
-        log.info("  RAG endpoint:{}", AppConfig.RAG_API_URL);
 
         try (ThinkConsumer consumer = new ThinkConsumer()) {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {

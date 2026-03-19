@@ -8,7 +8,6 @@ import io.axon.think.model.FullSessionContext;
 import io.axon.think.model.MessageInput;
 import io.axon.think.model.ThinkResponse;
 import io.axon.think.service.ClaudeApiService;
-import io.axon.think.service.RagService;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -24,12 +23,11 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 
 /**
  * Kafka consumer that reads {@link FullSessionContext} from {@code enriched-message-input},
- * calls RAG for additional context, invokes the Claude API with available tools,
+ * invokes the Claude API with available tools,
  * and produces a {@link ThinkResponse} to {@code think-request-response}.
  */
 public class ThinkConsumer implements AutoCloseable {
@@ -49,7 +47,6 @@ public class ThinkConsumer implements AutoCloseable {
     private final KafkaConsumer<String, String> consumer;
     private final KafkaProducer<String, String> producer;
     private final ObjectMapper mapper;
-    private final RagService ragService;
     private final ClaudeApiService claudeApiService;
     private volatile boolean running = true;
 
@@ -60,7 +57,6 @@ public class ThinkConsumer implements AutoCloseable {
 
         this.consumer = createConsumer();
         this.producer = createProducer();
-        this.ragService = new RagService(mapper);
         this.claudeApiService = new ClaudeApiService(mapper);
     }
 
@@ -95,9 +91,8 @@ public class ThinkConsumer implements AutoCloseable {
     /**
      * Processes a single enriched-message-input record:
      * 1. Deserialize FullSessionContext
-     * 2. Query RAG for relevant context
-     * 3. Build Claude API request with tools
-     * 4. Produce ThinkResponse to think-request-response
+     * 2. Build Claude API request with tools
+     * 3. Produce ThinkResponse to think-request-response
      */
     void processRecord(ConsumerRecord<String, String> record) throws Exception {
         // 1. Deserialize input
@@ -112,21 +107,17 @@ public class ThinkConsumer implements AutoCloseable {
                 context.history() != null ? context.history().size() : 0,
                 context.latestInput() != null ? context.latestInput().role() : "null");
 
-        // 2. Query RAG for prompt context
-        String latestContent = context.latestInput() != null ? context.latestInput().contentAsString() : "";
-        List<String> ragChunks = ragService.retrieveContext(latestContent, sessionId);
+        // 2. Build system prompt with memoir context
+        String systemPrompt = buildSystemPrompt(context.memoirContext());
 
-        // 3. Build system prompt with RAG context and memoir
-        String systemPrompt = buildSystemPrompt(ragChunks, context.memoirContext());
-
-        // 4. Convert history + latest input to Claude message format
+        // 3. Convert history + latest input to Claude message format
         List<Map<String, Object>> claudeMessages = ClaudeApiService.toClaudeMessages(
                 context.history(), context.latestInput());
 
-        // 5. Call Claude API
+        // 4. Call Claude API
         ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
 
-        // 6. Prepend the user's latestInput to the response so downstream
+        // 5. Prepend the user's latestInput to the response so downstream
         //    processors see the request-response pair for this turn.
         if (context.latestInput() != null) {
             List<MessageInput> augmentedMessages = new ArrayList<>();
@@ -147,7 +138,7 @@ public class ThinkConsumer implements AutoCloseable {
             );
         }
 
-        // 7. Produce to think-request-response
+        // 6. Produce to think-request-response
         String outputJson = mapper.writeValueAsString(thinkResponse);
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
                 AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
@@ -164,23 +155,15 @@ public class ThinkConsumer implements AutoCloseable {
     }
 
     /**
-     * Builds the system prompt, injecting RAG context if available.
+     * Builds the system prompt, injecting memoir context if available.
      */
-    static String buildSystemPrompt(List<String> ragChunks, String memoirContext) {
+    static String buildSystemPrompt(String memoirContext) {
         StringBuilder extra = new StringBuilder();
 
         if (memoirContext != null && !memoirContext.isBlank()) {
             extra.append("\n\nUser memoir (known facts about this user from previous sessions):\n");
             extra.append(memoirContext);
             extra.append("\n\nUse the memoir to personalize your responses.");
-        }
-
-        if (ragChunks != null && !ragChunks.isEmpty()) {
-            extra.append("\n\nRelevant context from knowledge base:\n");
-            for (int i = 0; i < ragChunks.size(); i++) {
-                extra.append(String.format("\n--- Document %d ---\n%s\n", i + 1, ragChunks.get(i)));
-            }
-            extra.append("\nUse the above context to inform your response when relevant.");
         }
 
         return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());

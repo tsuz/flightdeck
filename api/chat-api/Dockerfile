@@ -7,10 +7,11 @@ RUN mvn package -q -DskipTests
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/target/think-consumer-0.1.0-SNAPSHOT.jar app.jar
+COPY --from=build /app/target/chat-api-0.1.0-SNAPSHOT.jar app.jar
 
 ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-ENV CLAUDE_API_KEY=""
-ENV CLAUDE_MODEL=claude-sonnet-4-20250514
+ENV PORT=8000
+ENV WS_PORT=8001
 
+EXPOSE 8000 8001
 ENTRYPOINT ["java", "-jar", "app.jar"]

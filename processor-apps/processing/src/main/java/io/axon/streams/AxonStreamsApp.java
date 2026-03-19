@@ -128,9 +128,14 @@ public class AxonStreamsApp {
     }
 
     private static Properties buildConfig() {
+        String bootstrapServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (bootstrapServers == null || bootstrapServers.isBlank()) {
+            bootstrapServers = "localhost:9092";
+        }
+
         Properties p = new Properties();
         p.put(StreamsConfig.APPLICATION_ID_CONFIG,    "axon-streams");
-        p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         p.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG,
               org.apache.kafka.common.serialization.Serdes.StringSerde.class);
         p.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG,

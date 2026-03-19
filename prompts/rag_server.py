@@ -12,15 +12,16 @@ Usage:
 """
 
 import json
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 
 COLLECTION_NAME = "prompts"
-QDRANT_URL = "http://localhost:6333"
+QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-PORT = 8081
+PORT = int(os.environ.get("PORT", "8081"))
 
 # Initialize once at startup
 print(f"Loading embedding model '{EMBEDDING_MODEL}'...")

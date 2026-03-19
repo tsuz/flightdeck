@@ -34,13 +34,6 @@ public final class AppConfig {
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
 
-    // ── RAG ─────────────────────────────────────────────────────────────────
-    public static final String RAG_API_URL =
-            env("RAG_API_URL", "http://localhost:8081/api/rag/query");
-
-    public static final int RAG_TOP_K =
-            Integer.parseInt(env("RAG_TOP_K", "5"));
-
     // ── Feature flags ─────────────────────────────────────────────────────
     public static final boolean TOOLS_ENABLED =
             Boolean.parseBoolean(env("TOOLS_ENABLED", "false"));

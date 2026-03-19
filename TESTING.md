@@ -3,7 +3,7 @@ Test message goes into the system
 
 > kafka-topics --bootstrap-server localhost:9092 --list
 __consumer_offsets
-axon-streams-enrich-message-context-store-changelog
+flightdeck-streams-enrich-message-context-store-changelog
 message-input
 session-context
 

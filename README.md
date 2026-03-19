@@ -1,6 +1,6 @@
 # FlightDeck
 
-A reliable, AI Agent orchestration using Kafka.
+Fault tolerant and reliable AI Agent orchestrator
 
 ![FlightDeck](assets/img/flightdeck.png)
 

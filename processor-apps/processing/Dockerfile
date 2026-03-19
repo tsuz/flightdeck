@@ -10,5 +10,6 @@ WORKDIR /app
 COPY --from=build /app/target/axon-streams-0.1.0-SNAPSHOT.jar app.jar
 
 ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+ENV MEMOIR_ENABLED=true
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

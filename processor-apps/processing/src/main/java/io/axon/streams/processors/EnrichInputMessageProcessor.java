@@ -53,10 +53,8 @@ public class EnrichInputMessageProcessor {
         KStream<String, MessageInput> keyedStream = inputStream
                 .selectKey((key, msg) -> msg.sessionId());
 
-        // ── Two-stage left join: message ⟕ session-context ⟕ memoir-context ─
-        //    First join is by session_id. Second join is by user_id (memoir
-        //    persists across sessions), then re-key back to session_id for output.
-        keyedStream
+        // ── Join: message ⟕ session-context (⟕ memoir-context if enabled) ──
+        KStream<String, FullSessionContext> enriched = keyedStream
                 .leftJoin(
                         contextTable,
                         EnrichInputMessageProcessor::enrichWithContext,
@@ -65,21 +63,26 @@ public class EnrichInputMessageProcessor {
                                 JsonSerde.of(MessageInput.class),
                                 JsonSerde.of(SessionContext.class)
                         )
-                )
-                // Re-key by userId for the memoir join
-                .selectKey((sessionId, full) ->
-                        full.userId() != null ? full.userId() : sessionId)
-                .leftJoin(
-                        memoirTable,
-                        EnrichInputMessageProcessor::enrichWithMemoir,
-                        Joined.with(
-                                Serdes.String(),
-                                JsonSerde.of(FullSessionContext.class),
-                                Serdes.String()
-                        )
-                )
-                // Re-key back to sessionId for downstream consumers
-                .selectKey((userId, full) -> full.sessionId())
+                );
+
+        // If memoir is enabled, re-key by userId, join with memoir, re-key back
+        if (memoirTable != null) {
+            enriched = enriched
+                    .selectKey((sessionId, full) ->
+                            full.userId() != null ? full.userId() : sessionId)
+                    .leftJoin(
+                            memoirTable,
+                            EnrichInputMessageProcessor::enrichWithMemoir,
+                            Joined.with(
+                                    Serdes.String(),
+                                    JsonSerde.of(FullSessionContext.class),
+                                    Serdes.String()
+                            )
+                    )
+                    .selectKey((userId, full) -> full.sessionId());
+        }
+
+        enriched
                 .peek((sessionId, full) ->
                         log.info("[{}] Enriched — history_size={} has_memoir={} first_turn={}",
                                 sessionId,

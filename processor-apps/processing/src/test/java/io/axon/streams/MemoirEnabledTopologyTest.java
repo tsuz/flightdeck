@@ -1,0 +1,210 @@
+package io.axon.streams;
+
+import io.axon.streams.config.Topics;
+import io.axon.streams.model.FullSessionContext;
+import io.axon.streams.model.MessageInput;
+import io.axon.streams.model.SessionContext;
+import io.axon.streams.serdes.JsonSerde;
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.test.TestRecord;
+import org.junit.jupiter.api.*;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
+import static org.assertj.core.api.Assertions.*;
+
+/**
+ * Tests that the MEMOIR_ENABLED flag correctly includes or excludes
+ * memoir-related processors from the topology.
+ */
+class MemoirEnabledTopologyTest {
+
+    private static final String TS = "2026-03-10T12:00:00Z";
+
+    // ── Memoir ENABLED ──────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("When MEMOIR_ENABLED=true")
+    class MemoirEnabled {
+
+        private TopologyTestDriver driver;
+        private TestInputTopic<String, MessageInput> messageInput;
+        private TestInputTopic<String, SessionContext> contextInput;
+        private TestInputTopic<String, String> memoirInput;
+        private TestOutputTopic<String, FullSessionContext> enrichedOutput;
+        private TestOutputTopic<String, String> memoirSessionEndOutput;
+
+        @BeforeEach
+        void setUp() {
+            Topology topology = AxonStreamsApp.buildTopology(true);
+            driver = new TopologyTestDriver(topology, testProps());
+
+            messageInput = driver.createInputTopic(
+                    Topics.MESSAGE_INPUT,
+                    Serdes.String().serializer(),
+                    JsonSerde.of(MessageInput.class).serializer());
+
+            contextInput = driver.createInputTopic(
+                    Topics.SESSION_CONTEXT,
+                    Serdes.String().serializer(),
+                    JsonSerde.of(SessionContext.class).serializer());
+
+            memoirInput = driver.createInputTopic(
+                    Topics.MEMOIR_CONTEXT,
+                    Serdes.String().serializer(),
+                    Serdes.String().serializer());
+
+            enrichedOutput = driver.createOutputTopic(
+                    Topics.ENRICHED_MESSAGE_INPUT,
+                    Serdes.String().deserializer(),
+                    JsonSerde.of(FullSessionContext.class).deserializer());
+
+            memoirSessionEndOutput = driver.createOutputTopic(
+                    Topics.MEMOIR_CONTEXT_SESSION_END,
+                    Serdes.String().deserializer(),
+                    Serdes.String().deserializer());
+        }
+
+        @AfterEach
+        void tearDown() { driver.close(); }
+
+        @Test
+        @DisplayName("Memoir context is joined into enriched message")
+        void memoirContextIncludedInEnrichedMessage() {
+            // Seed memoir for user-1
+            memoirInput.pipeInput("user-1", "User prefers concise answers.");
+
+            // Send a message
+            messageInput.pipeInput("sess-1", userMsg("sess-1", "user-1", "Hello"));
+
+            FullSessionContext result = enrichedOutput.readRecord().value();
+            assertThat(result.memoirContext()).isEqualTo("User prefers concise answers.");
+        }
+
+        @Test
+        @DisplayName("memoir-context-session-end sink is registered in topology")
+        void memoirSessionEndProcessorRegistered() {
+            Topology topology = AxonStreamsApp.buildTopology(true);
+            String description = topology.describe().toString();
+            assertThat(description).contains(Topics.MEMOIR_CONTEXT_SESSION_END);
+        }
+
+        @Test
+        @DisplayName("memoir-context-store is registered in topology")
+        void memoirContextStoreRegistered() {
+            Topology topology = AxonStreamsApp.buildTopology(true);
+            String description = topology.describe().toString();
+            assertThat(description).contains("memoir-context-store");
+        }
+    }
+
+    // ── Memoir DISABLED ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("When MEMOIR_ENABLED=false")
+    class MemoirDisabled {
+
+        private TopologyTestDriver driver;
+        private TestInputTopic<String, MessageInput> messageInput;
+        private TestInputTopic<String, SessionContext> contextInput;
+        private TestOutputTopic<String, FullSessionContext> enrichedOutput;
+
+        @BeforeEach
+        void setUp() {
+            Topology topology = AxonStreamsApp.buildTopology(false);
+            driver = new TopologyTestDriver(topology, testProps());
+
+            messageInput = driver.createInputTopic(
+                    Topics.MESSAGE_INPUT,
+                    Serdes.String().serializer(),
+                    JsonSerde.of(MessageInput.class).serializer());
+
+            contextInput = driver.createInputTopic(
+                    Topics.SESSION_CONTEXT,
+                    Serdes.String().serializer(),
+                    JsonSerde.of(SessionContext.class).serializer());
+
+            enrichedOutput = driver.createOutputTopic(
+                    Topics.ENRICHED_MESSAGE_INPUT,
+                    Serdes.String().deserializer(),
+                    JsonSerde.of(FullSessionContext.class).deserializer());
+        }
+
+        @AfterEach
+        void tearDown() { driver.close(); }
+
+        @Test
+        @DisplayName("Enriched message has null memoir context")
+        void memoirContextIsNull() {
+            messageInput.pipeInput("sess-1", userMsg("sess-1", "user-1", "Hello"));
+
+            FullSessionContext result = enrichedOutput.readRecord().value();
+            assertThat(result.memoirContext()).isNull();
+        }
+
+        @Test
+        @DisplayName("Enriched message still includes session history")
+        void sessionHistoryStillWorks() {
+            contextInput.pipeInput("sess-2", context("sess-2", "user-2", List.of(
+                    assistantMsg("sess-2", "user-2", "Prior reply."))));
+
+            messageInput.pipeInput("sess-2", userMsg("sess-2", "user-2", "Follow-up"));
+
+            FullSessionContext result = enrichedOutput.readRecord().value();
+            assertThat(result.history()).hasSize(1);
+            assertThat(result.latestInput().content()).isEqualTo("Follow-up");
+        }
+
+        @Test
+        @DisplayName("memoir-context topic is not registered in topology")
+        void memoirTopicNotInTopology() {
+            Topology topology = AxonStreamsApp.buildTopology(false);
+            String description = topology.describe().toString();
+            assertThat(description).doesNotContain("memoir-context-store");
+        }
+
+        @Test
+        @DisplayName("memoir-context-session-end sink is not registered in topology")
+        void memoirSessionEndProcessorNotRegistered() {
+            Topology topology = AxonStreamsApp.buildTopology(false);
+            String description = topology.describe().toString();
+            assertThat(description).doesNotContain(Topics.MEMOIR_CONTEXT_SESSION_END);
+        }
+
+        @Test
+        @DisplayName("Output key is preserved as session_id")
+        void outputKeyPreserved() {
+            messageInput.pipeInput("sess-key", userMsg("sess-key", "user-1", "hi"));
+
+            TestRecord<String, FullSessionContext> record = enrichedOutput.readRecord();
+            assertThat(record.key()).isEqualTo("sess-key");
+        }
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    private static Properties testProps() {
+        Properties props = new Properties();
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "test-memoir-enabled");
+        props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:9092");
+        return props;
+    }
+
+    private static MessageInput userMsg(String sessionId, String userId, String content) {
+        return new MessageInput(sessionId, userId, "user", content, TS, Map.of());
+    }
+
+    private static MessageInput assistantMsg(String sessionId, String userId, String content) {
+        return new MessageInput(sessionId, userId, "assistant", content, TS, Map.of());
+    }
+
+    private static SessionContext context(String sessionId, String userId,
+                                          List<MessageInput> history) {
+        return new SessionContext(sessionId, userId, 0.0, history.size(),
+                history.isEmpty() ? List.of() : List.of(history.get(history.size() - 1)),
+                history, TS);
+    }
+}

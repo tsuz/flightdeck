@@ -84,3 +84,17 @@ docker compose down
 ## Architecture
 
 ![Architecture](assets/img/architecture.png) 
+
+
+
+## ❤️ Support
+
+If you like this project, please give it a ⭐️
+
+<a href="https://github.com/tsuz/flightdeck/stargazers"><img src="https://img.shields.io/github/stars/tsuz/flightdeck?style=social" style="margin-left:0;box-shadow:none;border-radius:0;height:24px"></a>
+
+## ⛔️ Warning
+
+This library is not production ready.
+
+

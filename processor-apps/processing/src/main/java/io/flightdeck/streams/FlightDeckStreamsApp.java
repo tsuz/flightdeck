@@ -151,7 +151,7 @@ public class FlightDeckStreamsApp {
         }
 
         Properties p = new Properties();
-        p.put(StreamsConfig.APPLICATION_ID_CONFIG,    "flightdeck-streams");
+        p.put(StreamsConfig.APPLICATION_ID_CONFIG, Topics.AGENT_NAME + "-streams");
         p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         p.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG,
               org.apache.kafka.common.serialization.Serdes.StringSerde.class);

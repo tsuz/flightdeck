@@ -64,4 +64,12 @@ public class ChatApiApp {
         String v = System.getenv(key);
         return (v != null && !v.isBlank()) ? v : defaultValue;
     }
+
+    static String requireEnv(String key) {
+        String v = System.getenv(key);
+        if (v == null || v.isBlank()) {
+            throw new IllegalStateException("Required environment variable " + key + " is not set");
+        }
+        return v;
+    }
 }

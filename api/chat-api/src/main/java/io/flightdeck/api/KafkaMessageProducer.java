@@ -18,7 +18,8 @@ public class KafkaMessageProducer {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaMessageProducer.class);
 
-    private static final String TOPIC = "message-input";
+    private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
+    private static final String TOPIC = AGENT_NAME + "-message-input";
 
     private static final String BOOTSTRAP_SERVERS =
             ChatApiApp.env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");

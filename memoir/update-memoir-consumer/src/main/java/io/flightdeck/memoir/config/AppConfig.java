@@ -8,14 +8,16 @@ public final class AppConfig {
     private AppConfig() {}
 
     // ── Kafka ────────────────────────────────────────────────────────────────
+    public static final String AGENT_NAME = requireEnv("AGENT_NAME");
+
     public static final String BOOTSTRAP_SERVERS =
             env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
     public static final String CONSUMER_GROUP =
             env("KAFKA_CONSUMER_GROUP", "update-memoir-consumer-group");
     public static final String INPUT_TOPIC =
-            env("KAFKA_INPUT_TOPIC", "memoir-context-session-end");
+            env("KAFKA_INPUT_TOPIC", AGENT_NAME + "-memoir-context-session-end");
     public static final String OUTPUT_TOPIC =
-            env("KAFKA_OUTPUT_TOPIC", "memoir-context");
+            env("KAFKA_OUTPUT_TOPIC", AGENT_NAME + "-memoir-context");
 
     // ── Claude API ───────────────────────────────────────────────────────────
     public static final String CLAUDE_API_KEY =
@@ -34,5 +36,13 @@ public final class AppConfig {
     private static String env(String key, String defaultValue) {
         String value = System.getenv(key);
         return (value != null && !value.isBlank()) ? value : defaultValue;
+    }
+
+    private static String requireEnv(String key) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Required environment variable " + key + " is not set");
+        }
+        return value;
     }
 }

@@ -82,6 +82,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <environmentVariables>
+                        <AGENT_NAME>test</AGENT_NAME>
+                    </environmentVariables>
+                </configuration>
             </plugin>
 
             <!-- Creates a fat jar with Main-Class manifest entry -->

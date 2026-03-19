@@ -8,6 +8,8 @@ public final class AppConfig {
     private AppConfig() {}
 
     // ── Kafka ───────────────────────────────────────────────────────────────
+    public static final String AGENT_NAME = requireEnv("AGENT_NAME");
+
     public static final String BOOTSTRAP_SERVERS =
             env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
 
@@ -15,10 +17,10 @@ public final class AppConfig {
             env("KAFKA_CONSUMER_GROUP", "tool-execution-consumer-group");
 
     public static final String INPUT_TOPIC =
-            env("KAFKA_INPUT_TOPIC", "tool-use");
+            env("KAFKA_INPUT_TOPIC", AGENT_NAME + "-tool-use");
 
     public static final String OUTPUT_TOPIC =
-            env("KAFKA_OUTPUT_TOPIC", "tool-use-result");
+            env("KAFKA_OUTPUT_TOPIC", AGENT_NAME + "-tool-use-result");
 
     // ── Tool service endpoints ──────────────────────────────────────────────
     public static final String WEB_SEARCH_URL =
@@ -50,5 +52,13 @@ public final class AppConfig {
     private static String env(String key, String defaultValue) {
         String value = System.getenv(key);
         return (value != null && !value.isBlank()) ? value : defaultValue;
+    }
+
+    private static String requireEnv(String key) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Required environment variable " + key + " is not set");
+        }
+        return value;
     }
 }

@@ -57,6 +57,7 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `AGENT_NAME` | *(required)* | Name for this agent instance. Prefixes all Kafka topics (e.g. `myagent` → `myagent-message-input`) |
 | `CLAUDE_API_KEY` | *(required)* | Your Anthropic API key |
 | `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model to use |
 | `CLAUDE_MAX_TOKENS` | `8096` | Max tokens per Claude response |

@@ -39,6 +39,7 @@ services:
       - "8001:8001"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME}
       PORT: 8000
       WS_PORT: 8001
     depends_on:
@@ -49,6 +50,7 @@ services:
     build: ./processor-apps/processing
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME}
       MEMOIR_ENABLED: ${MEMOIR_ENABLED:-true}
       MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS: ${MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS:-20}
       MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS: ${MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS:-5}
@@ -63,6 +65,7 @@ services:
       CLAUDE_API_KEY: ${CLAUDE_API_KEY}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
       CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      AGENT_NAME: ${AGENT_NAME}
       TOOLS_ENABLED: "true"
     depends_on:
       kafka:
@@ -72,6 +75,7 @@ services:
     build: ./tools/tool-execution-consumer
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME}
       MOCK_MODE: "true"
     depends_on:
       kafka:
@@ -83,6 +87,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CLAUDE_API_KEY: ${CLAUDE_API_KEY}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      AGENT_NAME: ${AGENT_NAME}
     depends_on:
       kafka:
         condition: service_healthy
@@ -91,6 +96,7 @@ services:
     build: ./monitoring/logging-consumer
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME}
     depends_on:
       kafka:
         condition: service_healthy

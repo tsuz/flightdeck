@@ -25,18 +25,20 @@ public class PipelineConsumer implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(PipelineConsumer.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
+    private static final String P = AGENT_NAME + "-";
     private static final List<String> TOPICS = List.of(
-            "message-input",
-            "session-context",
-            "enriched-message-input",
-            "think-request-response",
-            "tool-use",
-            "tool-use-dlq",
-            "tool-use-result",
-            "tool-use-all-complete",
-            "tool-use-latency",
-            "session-cost",
-            "message-output"
+            P + "message-input",
+            P + "session-context",
+            P + "enriched-message-input",
+            P + "think-request-response",
+            P + "tool-use",
+            P + "tool-use-dlq",
+            P + "tool-use-result",
+            P + "tool-use-all-complete",
+            P + "tool-use-latency",
+            P + "session-cost",
+            P + "message-output"
     );
 
     private static final String BOOTSTRAP_SERVERS =
@@ -112,7 +114,7 @@ public class PipelineConsumer implements Runnable {
                 event.set("value", value);
 
                 // Extract cost info for LLM-related topics
-                if ("think-request-response".equals(topic)) {
+                if ((P + "think-request-response").equals(topic)) {
                     ObjectNode cost = mapper.createObjectNode();
                     if (value.has("input_tokens")) cost.put("inputTokens", value.get("input_tokens").asInt());
                     if (value.has("output_tokens")) cost.put("outputTokens", value.get("output_tokens").asInt());
@@ -122,7 +124,7 @@ public class PipelineConsumer implements Runnable {
                 }
 
                 // Extract latency for tool results
-                if ("tool-use-result".equals(topic) && value.has("latency_ms")) {
+                if ((P + "tool-use-result").equals(topic) && value.has("latency_ms")) {
                     event.put("latencyMs", value.get("latency_ms").asLong());
                 }
             } else {

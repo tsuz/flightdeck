@@ -20,7 +20,8 @@ public class OutputConsumer implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(OutputConsumer.class);
 
-    private static final String TOPIC = "message-output";
+    private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
+    private static final String TOPIC = AGENT_NAME + "-message-output";
     private static final String BOOTSTRAP_SERVERS =
             ChatApiApp.env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
     private static final String CONSUMER_GROUP =

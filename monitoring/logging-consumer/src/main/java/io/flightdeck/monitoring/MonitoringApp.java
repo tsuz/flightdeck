@@ -21,21 +21,23 @@ public class MonitoringApp {
 
     private static final Logger log = LoggerFactory.getLogger(MonitoringApp.class);
 
+    private static final String AGENT_NAME = requireEnv("AGENT_NAME");
+    private static final String P = AGENT_NAME + "-";
     private static final List<String> TOPICS = List.of(
-            "message-input",
-            "session-context",
-            "enriched-message-input",
-            "think-request-response",
-            "tool-use",
-            "tool-use-dlq",
-            "tool-use-result",
-            "tool-use-all-complete",
-            "tool-use-latency",
-            "session-cost",
-            "message-output",
-            "session-end",
-            "memoir-context",
-            "memoir-context-session-end"
+            P + "message-input",
+            P + "session-context",
+            P + "enriched-message-input",
+            P + "think-request-response",
+            P + "tool-use",
+            P + "tool-use-dlq",
+            P + "tool-use-result",
+            P + "tool-use-all-complete",
+            P + "tool-use-latency",
+            P + "session-cost",
+            P + "message-output",
+            P + "session-end",
+            P + "memoir-context",
+            P + "memoir-context-session-end"
     );
 
     private static final String BOOTSTRAP_SERVERS =
@@ -75,8 +77,16 @@ public class MonitoringApp {
         }
     }
 
-private static String env(String key, String defaultValue) {
+    private static String env(String key, String defaultValue) {
         String value = System.getenv(key);
         return (value != null && !value.isBlank()) ? value : defaultValue;
+    }
+
+    private static String requireEnv(String key) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Required environment variable " + key + " is not set");
+        }
+        return value;
     }
 }

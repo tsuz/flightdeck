@@ -1,6 +1,6 @@
 # FlightDeck
 
-Fault tolerant and reliable AI Agent orchestrator
+Fault tolerant, event driven, extensible AI Agent orchestrator
 
 ![FlightDeck](assets/img/flightdeck.png)
 

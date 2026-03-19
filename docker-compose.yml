@@ -49,6 +49,8 @@ services:
     build: ./processor-apps/processing
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MEMOIR_ENABLED: ${MEMOIR_ENABLED:-true}
+      MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS: ${MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS:-20}
     depends_on:
       kafka:
         condition: service_healthy

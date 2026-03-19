@@ -11,5 +11,6 @@ COPY --from=build /app/target/axon-streams-0.1.0-SNAPSHOT.jar app.jar
 
 ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 ENV MEMOIR_ENABLED=true
+ENV MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS=20
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

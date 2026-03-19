@@ -131,11 +131,12 @@ public class AxonStreamsApp {
         EndTurnProcessor.register(builder, thinkStream);
         AggregateToolExecutionResultProcessor.register(builder);
         TransformToolUseDoneProcessor.register(builder);
-        SessionEndProcessor.register(builder, thinkStream);
 
         if (memoirEnabled) {
+            SessionEndProcessor.register(builder, thinkStream);
             MemoirSessionEndProcessor.register(builder, memoirTable, sessionContextTable, thinkTable);
-            log.info("Memoir is ENABLED");
+            log.info("Memoir is ENABLED (inactivity_threshold={}s)",
+                    SessionEndProcessor.INACTIVITY_THRESHOLD.getSeconds());
         } else {
             log.info("Memoir is DISABLED");
         }

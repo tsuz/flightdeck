@@ -34,11 +34,17 @@ public class SessionEndProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(SessionEndProcessor.class);
 
-    static final String LAST_SEEN_STORE = "session-last-seen-store";
-    static final Duration INACTIVITY_THRESHOLD = Duration.ofSeconds(20);
+    public static final String LAST_SEEN_STORE = "session-last-seen-store";
+    public static final Duration INACTIVITY_THRESHOLD = Duration.ofSeconds(
+            Long.parseLong(System.getenv().getOrDefault("MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS", "20")));
     static final Duration PUNCTUATE_INTERVAL = Duration.ofSeconds(5);
 
     public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
+        register(builder, thinkStream, INACTIVITY_THRESHOLD);
+    }
+
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream,
+                                Duration inactivityThreshold) {
 
         StoreBuilder<KeyValueStore<String, Long>> storeBuilder =
                 Stores.keyValueStoreBuilder(
@@ -51,13 +57,19 @@ public class SessionEndProcessor {
 
         thinkStream
                 .mapValues(v -> v != null ? "{}" : null)
-                .process(new InactivityProcessorSupplier(), LAST_SEEN_STORE)
+                .process(new InactivityProcessorSupplier(inactivityThreshold), LAST_SEEN_STORE)
                 .filter((k, v) -> v != null)
                 .to(Topics.SESSION_END, Produced.with(Serdes.String(), Serdes.String()));
     }
 
     static class InactivityProcessorSupplier
             implements ProcessorSupplier<String, String, String, String> {
+
+        private final Duration inactivityThreshold;
+
+        InactivityProcessorSupplier(Duration inactivityThreshold) {
+            this.inactivityThreshold = inactivityThreshold;
+        }
 
         @Override
         public Set<StoreBuilder<?>> stores() {
@@ -66,14 +78,19 @@ public class SessionEndProcessor {
 
         @Override
         public ContextualProcessor<String, String, String, String> get() {
-            return new InactivityProcessor();
+            return new InactivityProcessor(inactivityThreshold);
         }
     }
 
     static class InactivityProcessor
             extends ContextualProcessor<String, String, String, String> {
 
+        private final Duration inactivityThreshold;
         private KeyValueStore<String, Long> lastSeenStore;
+
+        InactivityProcessor(Duration inactivityThreshold) {
+            this.inactivityThreshold = inactivityThreshold;
+        }
 
         @Override
         public void init(org.apache.kafka.streams.processor.api.ProcessorContext<String, String> context) {
@@ -83,7 +100,7 @@ public class SessionEndProcessor {
             context.schedule(PUNCTUATE_INTERVAL, PunctuationType.WALL_CLOCK_TIME, this::checkInactivity);
 
             log.info("SessionEndProcessor initialized: inactivity_threshold={}s punctuate_interval={}s",
-                    INACTIVITY_THRESHOLD.getSeconds(), PUNCTUATE_INTERVAL.getSeconds());
+                    inactivityThreshold.getSeconds(), PUNCTUATE_INTERVAL.getSeconds());
         }
 
         @Override
@@ -95,7 +112,7 @@ public class SessionEndProcessor {
 
         private void checkInactivity(long punctuateTimestamp) {
             long now = System.currentTimeMillis();
-            long thresholdMs = INACTIVITY_THRESHOLD.toMillis();
+            long thresholdMs = inactivityThreshold.toMillis();
 
             try (KeyValueIterator<String, Long> iter = lastSeenStore.all()) {
                 while (iter.hasNext()) {

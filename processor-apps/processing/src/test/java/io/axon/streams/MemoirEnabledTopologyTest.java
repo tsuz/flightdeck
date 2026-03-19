@@ -99,6 +99,15 @@ class MemoirEnabledTopologyTest {
             String description = topology.describe().toString();
             assertThat(description).contains("memoir-context-store");
         }
+
+        @Test
+        @DisplayName("session-end sink and store are registered in topology")
+        void sessionEndProcessorRegistered() {
+            Topology topology = AxonStreamsApp.buildTopology(true);
+            String description = topology.describe().toString();
+            assertThat(description).contains(Topics.SESSION_END);
+            assertThat(description).contains("session-last-seen-store");
+        }
     }
 
     // ── Memoir DISABLED ─────────────────────────────────────────────────────
@@ -172,6 +181,15 @@ class MemoirEnabledTopologyTest {
             Topology topology = AxonStreamsApp.buildTopology(false);
             String description = topology.describe().toString();
             assertThat(description).doesNotContain(Topics.MEMOIR_CONTEXT_SESSION_END);
+        }
+
+        @Test
+        @DisplayName("session-end sink is not registered in topology")
+        void sessionEndProcessorNotRegistered() {
+            Topology topology = AxonStreamsApp.buildTopology(false);
+            String description = topology.describe().toString();
+            assertThat(description).doesNotContain(Topics.SESSION_END);
+            assertThat(description).doesNotContain("session-last-seen-store");
         }
 
         @Test

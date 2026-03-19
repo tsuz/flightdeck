@@ -36,6 +36,9 @@ public class AxonStreamsApp {
 
     private static final Logger log = LoggerFactory.getLogger(AxonStreamsApp.class);
 
+    static final boolean MEMOIR_ENABLED = Boolean.parseBoolean(
+            System.getenv().getOrDefault("MEMOIR_ENABLED", "true"));
+
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
     static final String SESSION_CONTEXT_STORE = "session-context-store";
@@ -76,17 +79,24 @@ public class AxonStreamsApp {
 
     /** Build and return the full topology (also used by tests). */
     public static Topology buildTopology() {
+        return buildTopology(MEMOIR_ENABLED);
+    }
+
+    static Topology buildTopology(boolean memoirEnabled) {
         StreamsBuilder builder = new StreamsBuilder();
 
-        // ── Shared KTable: memoir-context (used by multiple processors) ───────
-        KTable<String, String> memoirTable = builder.table(
-                Topics.MEMOIR_CONTEXT,
-                Consumed.with(Serdes.String(), Serdes.String()),
-                Materialized.<String, String>as(
-                                Stores.persistentKeyValueStore(MEMOIR_CONTEXT_STORE))
-                        .withKeySerde(Serdes.String())
-                        .withValueSerde(Serdes.String())
-        );
+        // ── Shared KTable: memoir-context (only when memoir is enabled) ───────
+        KTable<String, String> memoirTable = null;
+        if (memoirEnabled) {
+            memoirTable = builder.table(
+                    Topics.MEMOIR_CONTEXT,
+                    Consumed.with(Serdes.String(), Serdes.String()),
+                    Materialized.<String, String>as(
+                                    Stores.persistentKeyValueStore(MEMOIR_CONTEXT_STORE))
+                            .withKeySerde(Serdes.String())
+                            .withValueSerde(Serdes.String())
+            );
+        }
 
         // ── Shared KStream + KTable: think-request-response ─────────────────
         //    ONE source registration — shared across all processors that read
@@ -121,8 +131,15 @@ public class AxonStreamsApp {
         EndTurnProcessor.register(builder, thinkStream);
         AggregateToolExecutionResultProcessor.register(builder);
         TransformToolUseDoneProcessor.register(builder);
-        SessionEndProcessor.register(builder, thinkStream);
-        MemoirSessionEndProcessor.register(builder, memoirTable, sessionContextTable, thinkTable);
+
+        if (memoirEnabled) {
+            SessionEndProcessor.register(builder, thinkStream);
+            MemoirSessionEndProcessor.register(builder, memoirTable, sessionContextTable, thinkTable);
+            log.info("Memoir is ENABLED (inactivity_threshold={}s)",
+                    SessionEndProcessor.INACTIVITY_THRESHOLD.getSeconds());
+        } else {
+            log.info("Memoir is DISABLED");
+        }
 
         return builder.build();
     }

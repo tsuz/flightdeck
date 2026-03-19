@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main, feature/enable-memoir]
+    branches: [main]
   pull_request:
     branches: [main]
 

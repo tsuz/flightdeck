@@ -144,7 +144,7 @@ public class FlightDeckStreamsApp {
         return builder.build();
     }
 
-    private static Properties buildConfig() {
+    public static Properties buildConfig() {
         String bootstrapServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
         if (bootstrapServers == null || bootstrapServers.isBlank()) {
             bootstrapServers = "localhost:9092";

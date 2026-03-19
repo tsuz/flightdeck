@@ -62,6 +62,7 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | `CLAUDE_MAX_TOKENS` | `8096` | Max tokens per Claude response |
 | `MEMOIR_ENABLED` | `true` | Enable per-user long-term memory across sessions. Set to `false` to disable. |
 | `MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS` | `20` | Seconds of inactivity before a session ends and memoir is saved. Only applies when `MEMOIR_ENABLED=true`. |
+| `MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS` | `5` | How often (in seconds) to check for inactive sessions. Only applies when `MEMOIR_ENABLED=true`. |
 
 ### Tests
 

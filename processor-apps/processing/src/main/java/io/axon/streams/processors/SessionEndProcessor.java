@@ -37,14 +37,20 @@ public class SessionEndProcessor {
     public static final String LAST_SEEN_STORE = "session-last-seen-store";
     public static final Duration INACTIVITY_THRESHOLD = Duration.ofSeconds(
             Long.parseLong(System.getenv().getOrDefault("MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS", "20")));
-    static final Duration PUNCTUATE_INTERVAL = Duration.ofSeconds(5);
+    public static final Duration PUNCTUATE_INTERVAL = Duration.ofSeconds(
+            Long.parseLong(System.getenv().getOrDefault("MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS", "5")));
 
     public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
-        register(builder, thinkStream, INACTIVITY_THRESHOLD);
+        register(builder, thinkStream, INACTIVITY_THRESHOLD, PUNCTUATE_INTERVAL);
     }
 
     public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream,
                                 Duration inactivityThreshold) {
+        register(builder, thinkStream, inactivityThreshold, PUNCTUATE_INTERVAL);
+    }
+
+    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream,
+                                Duration inactivityThreshold, Duration punctuateInterval) {
 
         StoreBuilder<KeyValueStore<String, Long>> storeBuilder =
                 Stores.keyValueStoreBuilder(
@@ -57,7 +63,7 @@ public class SessionEndProcessor {
 
         thinkStream
                 .mapValues(v -> v != null ? "{}" : null)
-                .process(new InactivityProcessorSupplier(inactivityThreshold), LAST_SEEN_STORE)
+                .process(new InactivityProcessorSupplier(inactivityThreshold, punctuateInterval), LAST_SEEN_STORE)
                 .filter((k, v) -> v != null)
                 .to(Topics.SESSION_END, Produced.with(Serdes.String(), Serdes.String()));
     }
@@ -66,9 +72,11 @@ public class SessionEndProcessor {
             implements ProcessorSupplier<String, String, String, String> {
 
         private final Duration inactivityThreshold;
+        private final Duration punctuateInterval;
 
-        InactivityProcessorSupplier(Duration inactivityThreshold) {
+        InactivityProcessorSupplier(Duration inactivityThreshold, Duration punctuateInterval) {
             this.inactivityThreshold = inactivityThreshold;
+            this.punctuateInterval = punctuateInterval;
         }
 
         @Override
@@ -78,7 +86,7 @@ public class SessionEndProcessor {
 
         @Override
         public ContextualProcessor<String, String, String, String> get() {
-            return new InactivityProcessor(inactivityThreshold);
+            return new InactivityProcessor(inactivityThreshold, punctuateInterval);
         }
     }
 
@@ -86,10 +94,12 @@ public class SessionEndProcessor {
             extends ContextualProcessor<String, String, String, String> {
 
         private final Duration inactivityThreshold;
+        private final Duration punctuateInterval;
         private KeyValueStore<String, Long> lastSeenStore;
 
-        InactivityProcessor(Duration inactivityThreshold) {
+        InactivityProcessor(Duration inactivityThreshold, Duration punctuateInterval) {
             this.inactivityThreshold = inactivityThreshold;
+            this.punctuateInterval = punctuateInterval;
         }
 
         @Override
@@ -97,10 +107,10 @@ public class SessionEndProcessor {
             super.init(context);
             this.lastSeenStore = context.getStateStore(LAST_SEEN_STORE);
 
-            context.schedule(PUNCTUATE_INTERVAL, PunctuationType.WALL_CLOCK_TIME, this::checkInactivity);
+            context.schedule(punctuateInterval, PunctuationType.WALL_CLOCK_TIME, this::checkInactivity);
 
             log.info("SessionEndProcessor initialized: inactivity_threshold={}s punctuate_interval={}s",
-                    inactivityThreshold.getSeconds(), PUNCTUATE_INTERVAL.getSeconds());
+                    inactivityThreshold.getSeconds(), punctuateInterval.getSeconds());
         }
 
         @Override

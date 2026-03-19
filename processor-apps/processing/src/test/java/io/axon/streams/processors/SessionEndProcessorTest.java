@@ -22,14 +22,22 @@ class SessionEndProcessorTest {
 
     private static final String TS = "2026-03-10T12:00:00Z";
 
-    // ── Default threshold ────────────────────────────────────────────────────
+    // ── Default values from env ─────────────────────────────────────────────
 
     @Test
-    @DisplayName("Default threshold is read from env or falls back to 20s")
-    void defaultThreshold() {
+    @DisplayName("Default inactivity threshold is read from env or falls back to 20s")
+    void defaultInactivityThreshold() {
         String envValue = System.getenv("MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS");
         long expected = envValue != null ? Long.parseLong(envValue) : 20;
         assertThat(SessionEndProcessor.INACTIVITY_THRESHOLD.getSeconds()).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("Default punctuate interval is read from env or falls back to 5s")
+    void defaultPunctuateInterval() {
+        String envValue = System.getenv("MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS");
+        long expected = envValue != null ? Long.parseLong(envValue) : 5;
+        assertThat(SessionEndProcessor.PUNCTUATE_INTERVAL.getSeconds()).isEqualTo(expected);
     }
 
     // ── Custom threshold via register overload ───────────────────────────────
@@ -179,6 +187,69 @@ class SessionEndProcessorTest {
 
             // 1s elapsed is well under the 10s threshold
             assertThat(sessionEndOutput.isEmpty()).isTrue();
+        }
+    }
+
+    // ── Custom punctuate interval ────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("With custom punctuate interval")
+    class CustomPunctuateInterval {
+
+        private TopologyTestDriver driver;
+        private TestInputTopic<String, ThinkResponse> thinkInput;
+        private TestOutputTopic<String, String> sessionEndOutput;
+
+        @BeforeEach
+        void setUp() {
+            StreamsBuilder builder = new StreamsBuilder();
+            KStream<String, ThinkResponse> thinkStream = builder.stream(
+                    Topics.THINK_REQUEST_RESPONSE,
+                    Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
+
+            // 1s threshold, 2s punctuate interval
+            SessionEndProcessor.register(builder, thinkStream,
+                    Duration.ofSeconds(1), Duration.ofSeconds(2));
+
+            driver = new TopologyTestDriver(builder.build(), testProps());
+
+            thinkInput = driver.createInputTopic(
+                    Topics.THINK_REQUEST_RESPONSE,
+                    Serdes.String().serializer(),
+                    JsonSerde.of(ThinkResponse.class).serializer());
+
+            sessionEndOutput = driver.createOutputTopic(
+                    Topics.SESSION_END,
+                    Serdes.String().deserializer(),
+                    Serdes.String().deserializer());
+        }
+
+        @AfterEach
+        void tearDown() { driver.close(); }
+
+        @Test
+        @DisplayName("No check happens before punctuate interval fires")
+        void noCheckBeforePunctuateInterval() throws InterruptedException {
+            thinkInput.pipeInput("sess-1", thinkResponse("sess-1"));
+
+            // Inactivity threshold exceeded but punctuate hasn't fired yet
+            Thread.sleep(1100);
+            driver.advanceWallClockTime(Duration.ofSeconds(1));
+
+            assertThat(sessionEndOutput.isEmpty()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Session-end emitted once punctuate interval fires after threshold")
+        void sessionEndOnPunctuate() throws InterruptedException {
+            thinkInput.pipeInput("sess-1", thinkResponse("sess-1"));
+
+            Thread.sleep(1100);
+            // Advance past the 2s punctuate interval
+            driver.advanceWallClockTime(Duration.ofSeconds(3));
+
+            assertThat(sessionEndOutput.isEmpty()).isFalse();
+            assertThat(sessionEndOutput.readRecord().key()).isEqualTo("sess-1");
         }
     }
 

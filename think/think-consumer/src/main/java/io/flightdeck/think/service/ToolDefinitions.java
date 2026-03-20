@@ -2,11 +2,11 @@ package io.flightdeck.think.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.flightdeck.think.config.AppConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,19 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Loads tool definitions from {@code tools.json} — the single source of truth
- * shared with the prompts/Qdrant seed pipeline.
+ * Loads tool definitions from the file specified by {@code TOOLS_JSON_FILE} env var.
  *
- * <p>Resolution order:
- * <ol>
- *   <li>{@code TOOLS_JSON_PATH} env var (absolute path)</li>
- *   <li>{@code tools.json} on the classpath</li>
- * </ol>
- *
- * <p>Each entry in tools.json contains both the Claude API schema fields
- * ({@code name}, {@code description}, {@code input_schema}) and the RAG
- * prompt context ({@code prompt_context}, {@code category}). This class
- * extracts only the API-relevant fields.
+ * <p>Each entry in the JSON file may contain both Claude API schema fields
+ * ({@code name}, {@code description}, {@code input_schema}) and extra metadata
+ * ({@code prompt_context}, {@code category}). This class extracts only the
+ * API-relevant fields.
  */
 public final class ToolDefinitions {
 
@@ -40,7 +33,7 @@ public final class ToolDefinitions {
 
     /**
      * Returns the list of tool definitions formatted for the Claude API.
-     * Loaded once and cached.
+     * Loaded once from TOOLS_JSON_FILE and cached.
      */
     public static synchronized List<Map<String, Object>> getTools() {
         if (cachedTools == null) {
@@ -54,7 +47,6 @@ public final class ToolDefinitions {
         List<Map<String, Object>> apiTools = new ArrayList<>();
 
         for (Map<String, Object> raw : rawTools) {
-            // Extract only fields needed by Claude API
             Map<String, Object> tool = new LinkedHashMap<>();
             tool.put("name", raw.get("name"));
             tool.put("description", raw.get("description"));
@@ -62,42 +54,26 @@ public final class ToolDefinitions {
             apiTools.add(tool);
         }
 
-        log.info("Loaded {} tool definitions: {}",
+        log.info("Loaded {} tool definitions from {}: {}",
                 apiTools.size(),
+                AppConfig.TOOLS_JSON_FILE,
                 apiTools.stream().map(t -> (String) t.get("name")).toList());
 
         return apiTools;
     }
 
-    @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> loadRawTools() {
-        // 1. Try external file path from env
-        String externalPath = System.getenv("TOOLS_JSON_PATH");
-        if (externalPath != null && !externalPath.isBlank()) {
-            Path path = Path.of(externalPath);
-            if (Files.exists(path)) {
-                try {
-                    log.info("Loading tools from external path: {}", path);
-                    return MAPPER.readValue(path.toFile(),
-                            new TypeReference<List<Map<String, Object>>>() {});
-                } catch (IOException e) {
-                    log.error("Failed to load tools from {}: {}", path, e.getMessage());
-                }
-            }
+        Path path = Path.of(AppConfig.TOOLS_JSON_FILE);
+        if (!Files.exists(path)) {
+            throw new IllegalStateException(
+                    "TOOLS_JSON_FILE not found: " + path.toAbsolutePath());
         }
-
-        // 2. Try classpath
-        try (InputStream is = ToolDefinitions.class.getResourceAsStream("/tools.json")) {
-            if (is != null) {
-                log.info("Loading tools from classpath: tools.json");
-                return MAPPER.readValue(is,
-                        new TypeReference<List<Map<String, Object>>>() {});
-            }
+        try {
+            return MAPPER.readValue(path.toFile(),
+                    new TypeReference<List<Map<String, Object>>>() {});
         } catch (IOException e) {
-            log.error("Failed to load tools from classpath: {}", e.getMessage());
+            throw new IllegalStateException(
+                    "Failed to parse TOOLS_JSON_FILE: " + path.toAbsolutePath(), e);
         }
-
-        log.warn("No tools.json found — running with no tools");
-        return List.of();
     }
 }

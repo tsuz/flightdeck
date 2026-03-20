@@ -74,6 +74,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <environmentVariables>
+                        <AGENT_NAME>test</AGENT_NAME>
+                        <TOOLS_JSON_FILE>${project.basedir}/src/test/resources/test-tools.json</TOOLS_JSON_FILE>
+                    </environmentVariables>
+                </configuration>
             </plugin>
 
             <plugin>

@@ -103,11 +103,9 @@ public class ClaudeApiService {
         body.put("system", systemPrompt);
         body.put("messages", messages);
 
-        if (AppConfig.TOOLS_ENABLED) {
-            List<Map<String, Object>> tools = ToolDefinitions.getTools();
-            if (!tools.isEmpty()) {
-                body.put("tools", tools);
-            }
+        List<Map<String, Object>> tools = ToolDefinitions.getTools();
+        if (!tools.isEmpty()) {
+            body.put("tools", tools);
         }
 
         return body;

@@ -58,6 +58,7 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AGENT_NAME` | *(required)* | Unique name for the AI agent instance. |
+| `TOOLS_JSON_FILE` | *(required)* | Path to a JSON file defining the tools available to the agent. See [`prompts/tools.json`](prompts/tools.json) for an example. |
 | `CLAUDE_API_KEY` | *(required)* | Your Anthropic API key |
 | `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model to use |
 | `CLAUDE_MAX_TOKENS` | `8096` | Max tokens per Claude response |

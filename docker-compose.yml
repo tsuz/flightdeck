@@ -60,13 +60,15 @@ services:
 
   think-consumer:
     build: ./think/think-consumer
+    volumes:
+      - ${TOOLS_JSON_FILE:-./prompts/tools.json}:/app/tools.json:ro
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CLAUDE_API_KEY: ${CLAUDE_API_KEY}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
       CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
       AGENT_NAME: ${AGENT_NAME}
-      TOOLS_ENABLED: "true"
+      TOOLS_JSON_FILE: /app/tools.json
     depends_on:
       kafka:
         condition: service_healthy

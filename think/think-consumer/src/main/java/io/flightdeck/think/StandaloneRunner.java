@@ -34,7 +34,7 @@ public class StandaloneRunner {
 
         System.out.println("Claude API Standalone Runner");
         System.out.println("  Model:         " + AppConfig.CLAUDE_MODEL);
-        System.out.println("  Tools enabled: " + AppConfig.TOOLS_ENABLED);
+        System.out.println("  Tools file:    " + AppConfig.TOOLS_JSON_FILE);
         System.out.println();
 
         ClaudeApiService claudeApi = new ClaudeApiService(mapper);

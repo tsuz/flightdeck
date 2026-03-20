@@ -1,0 +1,27 @@
+[
+  {
+    "name": "test_tool_a",
+    "description": "A test tool for unit tests.",
+    "category": "testing",
+    "prompt_context": "This is extra metadata that should not appear in API output.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "param1": {
+          "type": "string",
+          "description": "A test parameter"
+        }
+      },
+      "required": ["param1"]
+    }
+  },
+  {
+    "name": "test_tool_b",
+    "description": "Another test tool.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+]

@@ -13,6 +13,9 @@ import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
 import io.flightdeck.streams.model.SessionContext;
 import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -26,7 +29,11 @@ import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * Entry-point: wires all processor fragments into a single Kafka Streams topology
@@ -45,6 +52,7 @@ public class FlightDeckStreamsApp {
 
     public static void main(String[] args) {
         Properties props = buildConfig();
+        ensureTopicsExist(props);
         Topology topology = buildTopology();
 
         log.info("Topology description:\n{}", topology.describe());
@@ -142,6 +150,60 @@ public class FlightDeckStreamsApp {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Pre-creates all source topics required by the topology.
+     * Kafka Streams crashes with MissingSourceTopicException if source topics
+     * don't exist at rebalance time, so we create them before starting.
+     */
+    private static void ensureTopicsExist(Properties streamsProps) {
+        String bootstrapServers = streamsProps.getProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG);
+
+        Properties adminProps = new Properties();
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+
+        List<String> requiredTopics = new java.util.ArrayList<>(List.of(
+                Topics.MESSAGE_INPUT,
+                Topics.SESSION_CONTEXT,
+                Topics.ENRICHED_MESSAGE_INPUT,
+                Topics.THINK_REQUEST_RESPONSE,
+                Topics.TOOL_USE,
+                Topics.TOOL_USE_DLQ,
+                Topics.TOOL_USE_RESULT,
+                Topics.TOOL_USE_ALL_COMPLETE,
+                Topics.SESSION_COST,
+                Topics.TOOL_USE_LATENCY,
+                Topics.MESSAGE_OUTPUT
+        ));
+
+        if (MEMOIR_ENABLED) {
+            requiredTopics.addAll(List.of(
+                    Topics.SESSION_END,
+                    Topics.MEMOIR_CONTEXT,
+                    Topics.MEMOIR_CONTEXT_SESSION_END
+            ));
+        }
+
+        try (AdminClient admin = AdminClient.create(adminProps)) {
+            Set<String> existing = admin.listTopics().names().get(30, TimeUnit.SECONDS);
+
+            List<NewTopic> toCreate = requiredTopics.stream()
+                    .filter(t -> !existing.contains(t))
+                    .map(t -> new NewTopic(t, 1, (short) 1))
+                    .collect(Collectors.toList());
+
+            if (!toCreate.isEmpty()) {
+                log.info("Creating {} missing topics: {}",
+                        toCreate.size(),
+                        toCreate.stream().map(NewTopic::name).toList());
+                admin.createTopics(toCreate).all().get(30, TimeUnit.SECONDS);
+            }
+
+            log.info("All {} required topics verified", requiredTopics.size());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to ensure required topics exist", e);
+        }
     }
 
     public static Properties buildConfig() {

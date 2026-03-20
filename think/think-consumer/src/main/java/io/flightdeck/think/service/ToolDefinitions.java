@@ -17,6 +17,9 @@ import java.util.Map;
 /**
  * Loads tool definitions from the file specified by {@code TOOLS_JSON_FILE} env var.
  *
+ * <p>If {@code TOOLS_JSON_FILE} is not set, the agent runs with no tools.
+ * If set but the file does not exist, startup fails with an error.
+ *
  * <p>Each entry in the JSON file may contain both Claude API schema fields
  * ({@code name}, {@code description}, {@code input_schema}) and extra metadata
  * ({@code prompt_context}, {@code category}). This class extracts only the
@@ -33,7 +36,7 @@ public final class ToolDefinitions {
 
     /**
      * Returns the list of tool definitions formatted for the Claude API.
-     * Loaded once from TOOLS_JSON_FILE and cached.
+     * Loaded once and cached.
      */
     public static synchronized List<Map<String, Object>> getTools() {
         if (cachedTools == null) {
@@ -54,16 +57,26 @@ public final class ToolDefinitions {
             apiTools.add(tool);
         }
 
-        log.info("Loaded {} tool definitions from {}: {}",
-                apiTools.size(),
-                AppConfig.TOOLS_JSON_FILE,
-                apiTools.stream().map(t -> (String) t.get("name")).toList());
+        if (apiTools.isEmpty()) {
+            log.info("No tool definitions loaded — agent will run without tools");
+        } else {
+            log.info("Loaded {} tool definitions: {}",
+                    apiTools.size(),
+                    apiTools.stream().map(t -> (String) t.get("name")).toList());
+        }
 
         return apiTools;
     }
 
     private static List<Map<String, Object>> loadRawTools() {
-        Path path = Path.of(AppConfig.TOOLS_JSON_FILE);
+        String toolsFile = AppConfig.TOOLS_JSON_FILE;
+
+        if (toolsFile == null || toolsFile.isBlank()) {
+            log.info("TOOLS_JSON_FILE is not set — running with no tool definitions");
+            return List.of();
+        }
+
+        Path path = Path.of(toolsFile);
         if (!Files.exists(path)) {
             throw new IllegalStateException(
                     "TOOLS_JSON_FILE not found: " + path.toAbsolutePath());

@@ -1,9 +1,8 @@
 package io.flightdeck.think.service;
 
+import io.flightdeck.think.config.AppConfig;
 import org.junit.jupiter.api.*;
 
-import java.io.File;
-import java.net.URL;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +14,12 @@ import static org.assertj.core.api.Assertions.*;
  * <p>The surefire plugin sets TOOLS_JSON_FILE to src/test/resources/test-tools.json.
  */
 class ToolDefinitionsTest {
+
+    @Test
+    @DisplayName("TOOLS_JSON_FILE env var is set for tests")
+    void toolsJsonFileIsSet() {
+        assertThat(AppConfig.TOOLS_JSON_FILE).isNotBlank();
+    }
 
     @Test
     @DisplayName("Loads tools from TOOLS_JSON_FILE")
@@ -48,6 +53,7 @@ class ToolDefinitionsTest {
         assertThat(tools.get(1).get("description")).isEqualTo("Another test tool.");
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     @DisplayName("Tool input_schema is extracted correctly")
     void toolInputSchemaExtracted() {

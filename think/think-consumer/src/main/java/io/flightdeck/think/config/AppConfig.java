@@ -37,7 +37,7 @@ public final class AppConfig {
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
 
     // ── Tools ─────────────────────────────────────────────────────────────
-    public static final String TOOLS_JSON_FILE = requireEnv("TOOLS_JSON_FILE");
+    public static final String TOOLS_JSON_FILE = env("TOOLS_JSON_FILE", "");
 
     // ── Consumer tuning ─────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =

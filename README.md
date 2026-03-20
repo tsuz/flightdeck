@@ -82,7 +82,7 @@ mvn test
 docker compose down
 ```
 
-## Architecture
+## 🗾 Architecture
 
 ![Architecture](assets/img/architecture.png) 
 
@@ -96,6 +96,7 @@ If you like this project, please give it a ⭐️
 
 ## ⛔️ Warning
 
-This library is not production ready.
+This library is not production ready. 
+It is highly recommended to test very thoroughly if you're planning to release to a large group of users.
 
 

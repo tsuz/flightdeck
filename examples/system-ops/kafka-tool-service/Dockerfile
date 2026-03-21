@@ -4,11 +4,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY app.py .
 
 ENV PYTHONUNBUFFERED=1
-ENV QDRANT_URL=http://qdrant:6333
-ENV PORT=8081
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+ENV TARGET_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 
-EXPOSE 8081
-CMD ["python", "rag_server.py"]
+CMD ["python", "app.py"]

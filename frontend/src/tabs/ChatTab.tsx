@@ -62,12 +62,18 @@ export function ChatTab({ messages, thinking, sessionId, onSend, onNewChat }: Pr
       </div>
 
       <form className="chat-input-bar" onSubmit={handleSubmit}>
-        <input
+        <textarea
           className="chat-input"
-          type="text"
-          placeholder="Type a message..."
+          placeholder="Type a message... (Shift+Enter for new line)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit(e);
+            }
+          }}
+          rows={1}
           autoFocus
         />
         <button className="chat-send-btn" type="submit" disabled={!input.trim()}>

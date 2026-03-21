@@ -1,0 +1,71 @@
+[
+  {
+    "name": "kafka_list_topics",
+    "description": "List all topics in the Kafka cluster with their partition counts and replication factors.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "kafka_describe_topic",
+    "description": "Get detailed information about a Kafka topic including partitions, replicas, ISR, and configuration.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "The name of the topic to describe"
+        }
+      },
+      "required": ["topic"]
+    }
+  },
+  {
+    "name": "kafka_list_consumer_groups",
+    "description": "List all consumer groups in the Kafka cluster with their state and member count.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "kafka_consumer_group_lag",
+    "description": "Check the consumer lag for a specific consumer group across all its subscribed topic partitions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "group_id": {
+          "type": "string",
+          "description": "The consumer group ID to check lag for"
+        }
+      },
+      "required": ["group_id"]
+    }
+  },
+  {
+    "name": "kafka_broker_health",
+    "description": "Check the health and status of all brokers in the Kafka cluster including controller info and node states.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "search_knowledge_base",
+    "description": "Search the operations knowledge base for architecture documentation, troubleshooting runbooks, and operational procedures. Use this when you need context about how the system is designed, what the expected configuration is, or how to diagnose and resolve issues.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query describing what information you need from the knowledge base"
+        }
+      },
+      "required": ["query"]
+    }
+  }
+]

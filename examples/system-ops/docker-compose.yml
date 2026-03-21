@@ -1,0 +1,148 @@
+services:
+
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:4.1.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─── RAG Pipeline ───────────────────────────────────────────────────────────
+
+  rag-service:
+    build: ../../prompts
+    ports:
+      - "8081:8081"
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      PORT: 8081
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  # Seeds Qdrant with architecture + troubleshooting docs — runs once then exits
+  rag-seed:
+    build:
+      context: .
+      dockerfile: seed.Dockerfile
+    environment:
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  # ─── Application Services ───────────────────────────────────────────────────
+
+  api:
+    build: ../../api/chat-api
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-system-ops}
+      PORT: 8000
+      WS_PORT: 8001
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  processing:
+    build: ../../processor-apps/processing
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-system-ops}
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  think-consumer:
+    build: ../../think/think-consumer
+    volumes:
+      - ./tools.json:/app/tools.json:ro
+      - ./system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-system-ops}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  kafka-tool-service:
+    build: ./kafka-tool-service
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TARGET_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-system-ops}
+      RAG_API_URL: http://rag-service:8081/api/rag/query
+    depends_on:
+      kafka:
+        condition: service_healthy
+      rag-service:
+        condition: service_started
+
+  monitoring:
+    build: ../../monitoring/logging-consumer
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-system-ops}
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+
+  frontend:
+    build: ../../frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  kafka-data:
+  qdrant-data:

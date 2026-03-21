@@ -76,7 +76,9 @@ services:
         condition: service_healthy
 
   lead-tool-service:
-    build: ./lead-tool-service
+    build:
+      context: ../..
+      dockerfile: examples/lead-followup-agent/lead-tool-service/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       AGENT_NAME: ${AGENT_NAME:-lead-followup}

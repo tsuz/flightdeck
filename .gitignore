@@ -35,5 +35,16 @@ dependency-reduced-pom.xml
 # ── Docker ───────────────────────────────────────────────────────────────────
 docker-compose.override.yml
 
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log

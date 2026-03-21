@@ -23,3 +23,22 @@ jobs:
       - name: Run tests
         working-directory: processor-apps/processing
         run: mvn test
+
+  python-sdk-tests:
+    name: Python SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install SDK with dev dependencies
+        working-directory: sdk/python
+        run: pip install -e ".[dev]"
+
+      - name: Run SDK tests
+        working-directory: sdk/python
+        run: pytest tests/ -v

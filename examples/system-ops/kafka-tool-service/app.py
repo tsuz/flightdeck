@@ -1,8 +1,5 @@
 """
-Kafka operations tool consumer — reads tool-use requests from Kafka,
-executes them, and produces results back to Kafka.
-
-Replaces the generic tool-execution-consumer for this example.
+Kafka operations tool consumer — rewritten using the flightdeck SDK.
 
 Tools:
     kafka_list_topics           — list all topics
@@ -21,14 +18,12 @@ Env vars:
 
 import json
 import os
-import signal
-import sys
-import time
 import urllib.request
-from datetime import datetime, timezone
 
-from confluent_kafka import Consumer, Producer, TopicPartition, KafkaException
+from confluent_kafka import Consumer, TopicPartition, KafkaException
 from confluent_kafka.admin import AdminClient
+
+from flightdeck_sdk import ToolConsumerRunner, ToolConsumerConfig
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -37,27 +32,11 @@ TARGET_BOOTSTRAP = os.environ.get("TARGET_KAFKA_BOOTSTRAP_SERVERS", KAFKA_BOOTST
 AGENT_NAME = os.environ["AGENT_NAME"]
 RAG_API_URL = os.environ.get("RAG_API_URL", "")
 
-INPUT_TOPIC = f"{AGENT_NAME}-tool-use"
-OUTPUT_TOPIC = f"{AGENT_NAME}-tool-use-result"
-
-# ── Kafka clients ─────────────────────────────────────────────────────────────
+# ── Admin client for the monitored cluster ───────────────────────────────────
 
 admin = AdminClient({"bootstrap.servers": TARGET_BOOTSTRAP})
 
-consumer = Consumer({
-    "bootstrap.servers": KAFKA_BOOTSTRAP,
-    "group.id": "tool-execution-consumer-group",
-    "auto.offset.reset": "earliest",
-    "enable.auto.commit": False,
-})
-
-producer = Producer({
-    "bootstrap.servers": KAFKA_BOOTSTRAP,
-    "acks": "all",
-    "enable.idempotence": True,
-})
-
-# ── Kafka ops tools ───────────────────────────────────────────────────────────
+# ── Kafka ops tools ──────────────────────────────────────────────────────────
 
 
 def kafka_list_topics(_input):
@@ -202,7 +181,7 @@ def kafka_broker_health(_input):
     }
 
 
-# ── Knowledge base search (RAG) ──────────────────────────────────────────────
+# ── Knowledge base search (RAG) ─────────────────────────────────────────────
 
 
 def search_knowledge_base(input_data):
@@ -249,7 +228,7 @@ def search_knowledge_base(input_data):
         return {"error": f"Knowledge base search failed: {str(e)}"}
 
 
-# ── Tool registry ─────────────────────────────────────────────────────────────
+# ── Tool registry ────────────────────────────────────────────────────────────
 
 TOOLS = {
     "kafka_list_topics": kafka_list_topics,
@@ -260,100 +239,33 @@ TOOLS = {
     "search_knowledge_base": search_knowledge_base,
 }
 
-# ── Main consumer loop ────────────────────────────────────────────────────────
-
-running = True
+# ── Process function ─────────────────────────────────────────────────────────
 
 
-def shutdown(signum, frame):
-    global running
-    print("\nShutdown signal received")
-    running = False
-
-
-signal.signal(signal.SIGTERM, shutdown)
-signal.signal(signal.SIGINT, shutdown)
-
-
-def process_record(msg):
-    session_id = msg.key().decode() if msg.key() else "unknown"
-    item = json.loads(msg.value())
-
-    tool_name = item.get("name", "")
-    tool_use_id = item.get("tool_use_id", "")
-    tool_input = item.get("input", {})
-    total_tools = item.get("total_tools", 1)
-
-    print(f"[{session_id}] Executing tool: {tool_name} (tool_use_id={tool_use_id})")
+def process(key, value, ctx):
+    request = json.loads(value)
+    tool_name = request.get("name", "")
 
     handler = TOOLS.get(tool_name)
-    start_ms = time.time() * 1000
-
     if handler is None:
-        result = {"error": f"Unknown tool: {tool_name}"}
-        status = "error"
-    else:
-        try:
-            result = handler(tool_input)
-            status = "success"
-        except Exception as e:
-            result = {"error": str(e)}
-            status = "error"
+        ctx.error(f"Unknown tool: {tool_name}")
+        return
 
-    latency_ms = int(time.time() * 1000 - start_ms)
-
-    tool_result = {
-        "session_id": session_id,
-        "tool_use_id": tool_use_id,
-        "name": tool_name,
-        "result": result,
-        "latency_ms": latency_ms,
-        "status": status,
-        "total_tools": total_tools,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-    print(f"[{session_id}] {tool_name} → {status} ({latency_ms}ms)")
-
-    producer.produce(
-        OUTPUT_TOPIC,
-        key=session_id.encode(),
-        value=json.dumps(tool_result).encode(),
-    )
-    producer.flush()
+    try:
+        result = handler(request.get("input", {}))
+        ctx.success(result)
+    except Exception as e:
+        ctx.error(str(e))
 
 
-def main():
-    print(f"Kafka Tool Consumer starting")
-    print(f"  FlightDeck Kafka: {KAFKA_BOOTSTRAP}")
-    print(f"  Target Kafka:     {TARGET_BOOTSTRAP}")
-    print(f"  Agent:            {AGENT_NAME}")
-    print(f"  Input topic:      {INPUT_TOPIC}")
-    print(f"  Output topic:     {OUTPUT_TOPIC}")
-    print(f"  RAG:              {RAG_API_URL or 'disabled'}")
-    print(f"  Tools:            {list(TOOLS.keys())}")
-
-    consumer.subscribe([INPUT_TOPIC])
-    print(f"Subscribed — waiting for tool requests...")
-
-    while running:
-        msg = consumer.poll(0.5)
-        if msg is None:
-            continue
-        if msg.error():
-            print(f"Consumer error: {msg.error()}")
-            continue
-
-        try:
-            process_record(msg)
-            consumer.commit(asynchronous=False)
-        except Exception as e:
-            print(f"Failed to process record: {e}")
-
-    print("Shutting down...")
-    consumer.close()
-    producer.flush()
-
+# ── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    main()
+    runner = ToolConsumerRunner(
+        ToolConsumerConfig(
+            agent_name=AGENT_NAME,
+            brokers=KAFKA_BOOTSTRAP,
+            process_fn=process,
+        )
+    )
+    runner.start()

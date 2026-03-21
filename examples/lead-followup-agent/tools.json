@@ -1,0 +1,112 @@
+[
+  {
+    "name": "search_leads",
+    "description": "Search for leads by criteria such as last contact date, status, industry, or company name. Returns a list of matching leads with summary info.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "last_contact_before": {
+          "type": "string",
+          "description": "ISO 8601 date — find leads not contacted since this date (e.g. 2025-06-01)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "contacted", "qualified", "proposal", "won", "lost", "dormant", "pending_followup"],
+          "description": "Filter by lead status"
+        },
+        "industry": {
+          "type": "string",
+          "description": "Filter by industry (e.g. fintech, healthcare, ecommerce)"
+        },
+        "company": {
+          "type": "string",
+          "description": "Search by company name (partial match)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max number of results to return (default 10)"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_lead_details",
+    "description": "Get full details for a specific lead including contact info, company, deal value, current status, and complete activity history (calls, emails, meetings, notes).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "description": "The unique lead ID"
+        }
+      },
+      "required": ["lead_id"]
+    }
+  },
+  {
+    "name": "update_lead_status",
+    "description": "Update the status of a lead. Use 'pending_followup' when the user approves a lead for follow-up. Always log an activity explaining why the status changed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "description": "The unique lead ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "contacted", "qualified", "proposal", "won", "lost", "dormant", "pending_followup"],
+          "description": "The new status"
+        }
+      },
+      "required": ["lead_id", "status"]
+    }
+  },
+  {
+    "name": "log_activity",
+    "description": "Record an activity or interaction for a lead. Use this every time you take an action — sending an email, making a call, scheduling a meeting, or adding notes.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "description": "The unique lead ID"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["email", "call", "meeting", "note"],
+          "description": "Type of activity"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Brief description of what was done or discussed"
+        }
+      },
+      "required": ["lead_id", "type", "summary"]
+    }
+  },
+  {
+    "name": "draft_followup_email",
+    "description": "Generate a personalized follow-up email for a lead based on their history and the reason for re-engagement. Returns the draft for review before sending.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "description": "The unique lead ID"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why you are re-engaging this lead (e.g. new product launch, pricing change, time-based follow-up)"
+        },
+        "tone": {
+          "type": "string",
+          "enum": ["casual", "professional", "urgent"],
+          "description": "Tone of the email (default: professional)"
+        }
+      },
+      "required": ["lead_id", "reason"]
+    }
+  }
+]

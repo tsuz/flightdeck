@@ -113,7 +113,9 @@ services:
         condition: service_healthy
 
   kafka-tool-service:
-    build: ./kafka-tool-service
+    build:
+      context: ../..
+      dockerfile: examples/system-ops/kafka-tool-service/Dockerfile
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       TARGET_KAFKA_BOOTSTRAP_SERVERS: kafka:29092

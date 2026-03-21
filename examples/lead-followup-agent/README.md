@@ -26,8 +26,7 @@ An AI sales assistant that helps re-engage dormant leads. It searches your CRM, 
 |-----------|-------|-----|
 | `SYSTEM_PROMPT_FILE` | `system-prompt.txt` | Instructs the agent to follow the approval workflow and always use tools |
 | `TOOLS_JSON_FILE` | `tools.json` | CRM tools for lead management |
-| `MEMOIR_ENABLED` | `true` | Remembers operator preferences across sessions (e.g. preferred tone, focus industries) |
-| `MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS` | `60` | Session ends after 60s of inactivity |
+| `MEMOIR_ENABLED` | `false` | Disabled — all lead state is tracked in the CRM via tools |
 
 ## Services
 
@@ -38,7 +37,6 @@ An AI sales assistant that helps re-engage dormant leads. It searches your CRM, 
 | `processing` | Kafka Streams pipeline with memoir enabled |
 | `think-consumer` | Claude API caller with CRM tools |
 | `lead-tool-service` | Python Kafka consumer with mock CRM data (5 sample leads) |
-| `memoir-consumer` | Generates session summaries for operator memory |
 | `frontend` | Web UI |
 
 ## Mock CRM Data

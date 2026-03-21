@@ -53,9 +53,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       AGENT_NAME: ${AGENT_NAME:-lead-followup}
-      MEMOIR_ENABLED: "true"
-      MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS: 60
-      MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS: 10
+      MEMOIR_ENABLED: "false"
     depends_on:
       kafka:
         condition: service_healthy
@@ -81,17 +79,6 @@ services:
     build: ./lead-tool-service
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      AGENT_NAME: ${AGENT_NAME:-lead-followup}
-    depends_on:
-      kafka:
-        condition: service_healthy
-
-  memoir-consumer:
-    build: ../../memoir/update-memoir-consumer
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
-      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
       AGENT_NAME: ${AGENT_NAME:-lead-followup}
     depends_on:
       kafka:

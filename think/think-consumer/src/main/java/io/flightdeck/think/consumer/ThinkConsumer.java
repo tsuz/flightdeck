@@ -35,15 +35,41 @@ public class ThinkConsumer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ThinkConsumer.class);
 
-    private static final String SYSTEM_PROMPT_TEMPLATE = """
+    private static final String DEFAULT_SYSTEM_PROMPT = """
             You are an intelligent AI assistant with access to various tools.
             Analyze the user's request and determine the best course of action.
             Use the available tools when needed to fulfill the user's request.
             If you can answer directly without tools, do so.
 
-            Be concise and helpful. When using tools, explain what you're doing and why.
+            Be concise and helpful. When using tools, explain what you're doing and why.""";
 
-            %s""";
+    private static final String SYSTEM_PROMPT_TEMPLATE = loadSystemPromptTemplate() + "\n\n%s";
+
+    private static String loadSystemPromptTemplate() {
+        return loadSystemPromptFromFile(AppConfig.SYSTEM_PROMPT_FILE);
+    }
+
+    /**
+     * Loads a system prompt from a file path. Returns the default prompt if
+     * the path is null or blank. Throws if the file is specified but not found.
+     */
+    static String loadSystemPromptFromFile(String file) {
+        if (file == null || file.isBlank()) {
+            log.info("SYSTEM_PROMPT_FILE not set — using default system prompt");
+            return DEFAULT_SYSTEM_PROMPT;
+        }
+        java.nio.file.Path path = java.nio.file.Path.of(file);
+        if (!java.nio.file.Files.exists(path)) {
+            throw new IllegalStateException("SYSTEM_PROMPT_FILE not found: " + path.toAbsolutePath());
+        }
+        try {
+            String prompt = java.nio.file.Files.readString(path);
+            log.info("Loaded system prompt from {}", file);
+            return prompt;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Failed to read SYSTEM_PROMPT_FILE: " + path.toAbsolutePath(), e);
+        }
+    }
 
     private final KafkaConsumer<String, String> consumer;
     private final KafkaProducer<String, String> producer;

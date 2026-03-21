@@ -36,6 +36,9 @@ public final class AppConfig {
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
 
+    // ── System prompt ──────────────────────────────────────────────────────
+    public static final String SYSTEM_PROMPT_FILE = env("SYSTEM_PROMPT_FILE", "");
+
     // ── Tools ─────────────────────────────────────────────────────────────
     public static final String TOOLS_JSON_FILE = env("TOOLS_JSON_FILE", "");
 

@@ -1,0 +1,130 @@
+[
+  {
+    "name": "get_sensor_details",
+    "description": "Get details about a sensor and its current readings including asset info, location, thresholds, and recent readings history.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "sensor_id": {
+          "type": "string",
+          "description": "The sensor ID (e.g. TEMP-001, VIB-003, PRESS-002)"
+        }
+      },
+      "required": ["sensor_id"]
+    }
+  },
+  {
+    "name": "query_maintenance_history",
+    "description": "Query the maintenance history for an asset. Returns past work orders, repairs, part replacements, and downtime records.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "description": "The asset/equipment ID (e.g. PUMP-101, COMPRESSOR-A3)"
+        },
+        "last_months": {
+          "type": "integer",
+          "description": "Look back N months (default: 12)"
+        }
+      },
+      "required": ["asset_id"]
+    }
+  },
+  {
+    "name": "check_parts_inventory",
+    "description": "Check parts inventory for availability, stock levels, lead time, and warehouse location.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "part_number": {
+          "type": "string",
+          "description": "Part number to check (e.g. BRG-6205, SEAL-42X62)"
+        },
+        "asset_id": {
+          "type": "string",
+          "description": "Asset ID to look up compatible parts for"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "create_work_order",
+    "description": "Create a work order in the CMMS system. Returns a draft work order for human approval. The work order is NOT submitted until the user explicitly approves it.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "description": "The asset/equipment ID"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"],
+          "description": "Work order priority"
+        },
+        "work_type": {
+          "type": "string",
+          "enum": ["corrective", "preventive", "inspection", "emergency"],
+          "description": "Type of maintenance work"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the work to be performed"
+        },
+        "parts_needed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of part numbers required"
+        },
+        "estimated_hours": {
+          "type": "number",
+          "description": "Estimated labor hours"
+        }
+      },
+      "required": ["asset_id", "priority", "work_type", "description"]
+    }
+  },
+  {
+    "name": "approve_work_order",
+    "description": "Submit an approved work order to the CMMS. Only call this AFTER the user has explicitly approved the work order draft.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "work_order_id": {
+          "type": "string",
+          "description": "The work order ID to approve (from create_work_order response)"
+        }
+      },
+      "required": ["work_order_id"]
+    }
+  },
+  {
+    "name": "send_technician_alert",
+    "description": "Send an email alert to the assigned technician with work order details. Only call this AFTER the work order has been approved.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "work_order_id": {
+          "type": "string",
+          "description": "The approved work order ID"
+        },
+        "technician_id": {
+          "type": "string",
+          "description": "The technician to notify (e.g. TECH-001)"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["immediate", "next_shift", "scheduled"],
+          "description": "When the technician should respond"
+        },
+        "message": {
+          "type": "string",
+          "description": "Additional message for the technician"
+        }
+      },
+      "required": ["work_order_id", "technician_id", "urgency"]
+    }
+  }
+]

@@ -28,6 +28,11 @@ docker compose up --build
 
 Once everything is up, open [http://localhost](http://localhost) in your browser.
 
+
+### Docs
+
+https://tsuz.github.io/flightdeck-docs/
+
 ### Services
 
 | Service | Port |

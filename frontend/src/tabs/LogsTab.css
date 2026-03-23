@@ -4,6 +4,67 @@
   height: 100%;
 }
 
+/* ── Sub-tabs ── */
+.logs-subtabs {
+  display: flex;
+  gap: 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.logs-subtab-btn {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs-subtab-btn:hover {
+  color: var(--text-primary);
+}
+
+.logs-subtab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.logs-subtab-badge {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.logs-subtab-btn.active .logs-subtab-badge {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent);
+}
+
+.logs-subtab-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Logs view ── */
+.logs-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .logs-toolbar {
   display: flex;
   justify-content: space-between;

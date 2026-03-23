@@ -1,0 +1,348 @@
+.pe-tab {
+  display: flex;
+  height: 100%;
+}
+
+/* ── Sidebar ── */
+.pe-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.pe-sidebar-header {
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pe-sidebar-empty {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.pe-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.pe-sidebar-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.pe-sidebar-item.selected {
+  background: var(--bg-tertiary);
+  border-left-color: var(--accent);
+}
+
+.pe-sidebar-id {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.pe-sidebar-msg {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.pe-sidebar-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+/* ── Main ── */
+.pe-main {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.pe-main-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.pe-pipeline {
+  padding: 24px;
+}
+
+.pe-pipeline-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pe-pipeline-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pe-pipeline-id {
+  font-size: 16px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.pe-pipeline-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.pe-pipeline-totals {
+  display: flex;
+  gap: 4px;
+}
+
+.pe-total-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 120px;
+}
+
+.pe-total-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pe-total-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.pe-total-value.cost {
+  color: var(--warning);
+}
+
+/* ── Timeline ── */
+.pe-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.pe-step {
+  display: flex;
+  gap: 16px;
+}
+
+/* Rail */
+.pe-step-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 40px;
+}
+
+.pe-step-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.pe-step-icon {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.pe-step-line {
+  width: 2px;
+  flex: 1;
+  min-height: 16px;
+  background: var(--border);
+}
+
+/* Card */
+.pe-step-card {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.pe-step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-tertiary);
+  border: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.1s;
+}
+
+.pe-step-card.collapsed .pe-step-card-header {
+  border-radius: 8px;
+}
+
+.pe-step-card.expanded .pe-step-card-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.pe-step-card-header:hover {
+  filter: brightness(1.15);
+}
+
+.pe-step-chevron {
+  font-size: 10px;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.pe-step-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Topic badge */
+.pe-topic-badge {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pe-step-label {
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pe-step-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.pe-step-time {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* Cost badge */
+.pe-cost-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: monospace;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.pe-cost-tokens {
+  color: var(--text-secondary);
+}
+
+.pe-cost-dollars {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* Latency badge */
+.pe-latency-badge {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--info);
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* ── Event Detail ── */
+.pe-event-detail {
+  padding: 12px 14px;
+}
+
+.pe-event-meta-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.pe-meta-item {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
+}
+
+.pe-event-json {
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--bg-primary);
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+}

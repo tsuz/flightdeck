@@ -1,99 +1,334 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import type { PipelineEvent } from "../types";
+import { JsonView, collapseAllNested, darkStyles } from "react-json-view-lite";
+import "react-json-view-lite/dist/index.css";
 import "./ExecutionTab.css";
 
 interface Props {
   pipelineEvents: PipelineEvent[];
 }
 
-// ── Topic display config ──
+// ── Row types ──
 
-const TOPIC_LABELS: Record<string, string> = {
-  "message-input": "Message Input",
-  "session-context": "Session Context",
-  "enriched-message-input": "Enriched Input",
-  "think-request-response": "LLM Response",
-  "tool-use": "Tool Dispatch",
-  "tool-use-dlq": "Tool DLQ",
-  "tool-use-result": "Tool Result",
-  "tool-use-all-complete": "Tools Complete",
-  "tool-use-latency": "Tool Latency",
-  "session-cost": "Session Cost",
-  "message-output": "Final Output",
-};
+type RowCategory = "Client Input" | "Message Input" | "Think" | "Tools Execution" | "Client Output";
 
-const TOPIC_ICONS: Record<string, string> = {
-  "message-input": "IN",
-  "session-context": "CTX",
-  "enriched-message-input": "ENR",
-  "think-request-response": "LLM",
-  "tool-use": "USE",
-  "tool-use-dlq": "DLQ",
-  "tool-use-result": "RES",
-  "tool-use-all-complete": "ALL",
-  "tool-use-latency": "LAT",
-  "session-cost": "CST",
-  "message-output": "OUT",
-};
-
-const TOPIC_COLORS: Record<string, string> = {
-  "message-input": "#3b82f6",
-  "session-context": "#8b5cf6",
-  "enriched-message-input": "#6366f1",
-  "think-request-response": "#f59e0b",
-  "tool-use": "#ec4899",
-  "tool-use-dlq": "#ef4444",
-  "tool-use-result": "#10b981",
-  "tool-use-all-complete": "#14b8a6",
-  "tool-use-latency": "#06b6d4",
-  "session-cost": "#f97316",
-  "message-output": "#22c55e",
-};
-
-// Sonnet pricing
-const INPUT_PRICE = 3 / 1_000_000;
-const OUTPUT_PRICE = 15 / 1_000_000;
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+interface SubRow {
+  label: string;
+  comment: string;
+  timestamp: string;
+  event: PipelineEvent;
 }
 
-function formatDollars(amount: number): string {
-  if (amount < 0.01) return `$${amount.toFixed(6)}`;
-  return `$${amount.toFixed(4)}`;
+interface TableRow {
+  category: RowCategory;
+  comment: string;
+  timestamp: string;
+  event: PipelineEvent;
+  subRows?: SubRow[];
+  dividerAfter?: boolean;
 }
 
-/** Build a short summary line from the event value */
-function eventSummary(event: PipelineEvent): string {
-  const v = event.value;
-  if (!v) return event.rawValue ?? "";
+// ── Topic matching ──
 
-  switch (event.topic) {
-    case "message-input":
-      return truncate(String(v.content ?? ""), 100);
-    case "think-request-response": {
-      const endTurn = v.end_turn;
-      const toolUses = v.tool_uses;
-      const toolCount = Array.isArray(toolUses) ? toolUses.length : 0;
-      if (endTurn) return "end_turn";
-      return `tool_use (${toolCount} tool${toolCount !== 1 ? "s" : ""})`;
+// Order matters: longer/more-specific suffixes first so that e.g.
+// "agent-enriched-message-input" matches "enriched-message-input"
+// before "message-input".
+const BASE_TOPICS = [
+  "enriched-message-input",
+  "message-input",
+  "session-context",
+  "think-request-response",
+  "tool-use-all-complete",
+  "tool-use-result",
+  "tool-use",
+  "message-output",
+] as const;
+
+function baseTopic(topic: string): string {
+  for (const base of BASE_TOPICS) {
+    if (topic === base || topic.endsWith("-" + base)) return base;
+  }
+  return topic;
+}
+
+// ── Helpers for message-input comment ──
+
+function messageInputComment(v: Record<string, unknown> | undefined): string {
+  if (!v) return "Input received";
+  const role = String(v.role ?? "");
+  if (role === "tool") {
+    const metadata = v.metadata as Record<string, unknown> | undefined;
+    const toolCount = metadata?.tool_count != null ? Number(metadata.tool_count) : null;
+    const content = v.content;
+    if (toolCount != null) {
+      return `Tool use results (${toolCount} tool${toolCount !== 1 ? "s" : ""})`;
     }
-    case "tool-use":
-      return `${v.name ?? "unknown"}`;
-    case "tool-use-result":
-      return `${v.name ?? "unknown"} → ${v.status ?? ""}`;
-    case "tool-use-all-complete":
-      return `${v.complete ? "complete" : "pending"} (${Array.isArray(v.results) ? v.results.length : 0} results)`;
-    case "message-output":
-      return truncate(String(v.content ?? ""), 100);
-    case "enriched-message-input":
-      return `history: ${Array.isArray(v.history) ? v.history.length : 0} items`;
-    case "session-context":
-      return `turns: ${v.llm_calls ?? 0}, cost: ${v.cost != null ? formatDollars(Number(v.cost)) : "-"}`;
-    case "session-cost":
-      return `cost: ${v.total_cost != null ? formatDollars(Number(v.total_cost)) : JSON.stringify(v).slice(0, 60)}`;
-    default:
-      return truncate(JSON.stringify(v), 80);
+    if (Array.isArray(content)) {
+      return `Tool use results (${content.length} tool${content.length !== 1 ? "s" : ""})`;
+    }
+    return "Tool use results";
+  }
+  return "User input";
+}
+
+function enrichedInputComment(v: Record<string, unknown> | undefined): string {
+  if (!v) return "Enriched context";
+  const historyCount = Array.isArray(v.history) ? v.history.length : 0;
+  const hasMemoir = Boolean(v.memoir_context);
+  const parts: string[] = [];
+  parts.push(`${historyCount} history item${historyCount !== 1 ? "s" : ""}`);
+  if (hasMemoir) parts.push("memoir attached");
+  return parts.join(", ");
+}
+
+// ── Build table rows from pipeline events ──
+
+function buildRows(events: PipelineEvent[]): TableRow[] {
+  const rows: TableRow[] = [];
+
+  // We accumulate sub-rows for the current "Message Input" group
+  let currentMsgRow: TableRow | null = null;
+
+  // We accumulate tool sub-rows for the current "Tools Execution" group
+  let currentToolRow: TableRow | null = null;
+
+  // Track the last enriched-message-input event to use as Think "request"
+  let lastEnrichedEvent: PipelineEvent | null = null;
+
+  for (const evt of events) {
+    const v = evt.value;
+    const topic = baseTopic(evt.topic);
+
+    switch (topic) {
+      case "message-input": {
+        // If we already have a pending Message Input row (e.g. duplicate
+        // event from Kafka), skip it entirely.
+        if (currentMsgRow) break;
+
+        // Flush any pending tools
+        flushToolRow();
+
+        const role = v ? String(v.role ?? "") : "";
+        const isUser = role !== "tool";
+        const comment = messageInputComment(v);
+        currentMsgRow = {
+          category: isUser ? "Client Input" : "Message Input",
+          comment,
+          timestamp: evt.timestamp,
+          event: evt,
+          subRows: [
+            {
+              label: "message-input",
+              comment,
+              timestamp: evt.timestamp,
+              event: evt,
+            },
+          ],
+        };
+        break;
+      }
+
+      case "enriched-message-input": {
+        lastEnrichedEvent = evt;
+        const comment = enrichedInputComment(v);
+        if (currentMsgRow) {
+          currentMsgRow.subRows!.push({
+            label: "enriched-message-input",
+            comment,
+            timestamp: evt.timestamp,
+            event: evt,
+          });
+        }
+        break;
+      }
+
+      case "session-context": {
+        // Attach cost info to the enriched sub-row if available
+        if (currentMsgRow && v) {
+          const cost = v.cost != null ? Number(v.cost) : null;
+          const llmCalls = v.llm_calls != null ? Number(v.llm_calls) : null;
+          if (cost != null) {
+            // Update the enriched sub-row comment to include cost
+            const enrichedSub = currentMsgRow.subRows!.find(
+              (s) => s.label === "enriched-message-input"
+            );
+            if (enrichedSub) {
+              const costStr = cost < 0.01 ? `$${cost.toFixed(6)}` : `$${cost.toFixed(4)}`;
+              const parts = [enrichedSub.comment];
+              parts.push(`cost: ${costStr}`);
+              if (llmCalls != null) parts.push(`${llmCalls} LLM call${llmCalls !== 1 ? "s" : ""}`);
+              enrichedSub.comment = parts.join(", ");
+            }
+          }
+        }
+        break;
+      }
+
+      case "think-request-response": {
+        flushToolRow();
+        flushMsgRow();
+
+        const endTurn = Boolean(v?.end_turn);
+        const toolUses = Array.isArray(v?.tool_uses) ? v.tool_uses : [];
+
+        let comment: string;
+        if (endTurn) {
+          comment = "Respond to user";
+        } else {
+          const toolNames = toolUses.map(
+            (tu) => String((tu as Record<string, unknown>).name ?? "unknown")
+          );
+          const count = toolNames.length;
+          const names = toolNames.join(", ");
+          comment = `Looking up ${count} source${count !== 1 ? "s" : ""} from ${names}`;
+        }
+
+        const thinkSubRows: SubRow[] = [];
+
+        // Request sub-row: the enriched input that was sent to the LLM
+        if (lastEnrichedEvent) {
+          thinkSubRows.push({
+            label: "request",
+            comment: "Input sent to LLM",
+            timestamp: lastEnrichedEvent.timestamp,
+            event: lastEnrichedEvent,
+          });
+        }
+
+        // Response sub-row: the LLM output
+        thinkSubRows.push({
+          label: "response",
+          comment,
+          timestamp: evt.timestamp,
+          event: evt,
+        });
+
+        rows.push({
+          category: "Think",
+          comment,
+          timestamp: evt.timestamp,
+          event: evt,
+          subRows: thinkSubRows,
+        });
+
+        lastEnrichedEvent = null;
+        break;
+      }
+
+      case "tool-use": {
+        flushMsgRow();
+        const name = String(v?.name ?? "unknown");
+
+        if (!currentToolRow) {
+          currentToolRow = {
+            category: "Tools Execution",
+            comment: "",
+            timestamp: evt.timestamp,
+            event: evt,
+            subRows: [],
+          };
+        }
+
+        currentToolRow.subRows!.push({
+          label: name,
+          comment: `Executing ${name}`,
+          timestamp: evt.timestamp,
+          event: evt,
+        });
+        break;
+      }
+
+      case "tool-use-result": {
+        if (currentToolRow) {
+          const name = String(v?.name ?? "unknown");
+          const status = String(v?.status ?? "");
+          const latency = evt.latencyMs ?? (v?.latency_ms != null ? Number(v.latency_ms) : null);
+          const sub = currentToolRow.subRows!.find(
+            (s) => s.label === name && !s.comment.includes("→")
+          );
+          if (sub) {
+            const parts = [name, "→", status];
+            if (latency != null) parts.push(`(${latency}ms)`);
+            sub.comment = parts.join(" ");
+          }
+        }
+        break;
+      }
+
+      case "tool-use-all-complete": {
+        flushMsgRow();
+
+        const resultCount = Array.isArray(v?.results) ? v.results.length : 0;
+
+        if (currentToolRow) {
+          // Add collect results as the last sub-row
+          currentToolRow.subRows!.push({
+            label: "collect-results",
+            comment: `${resultCount} result${resultCount !== 1 ? "s" : ""} collected`,
+            timestamp: evt.timestamp,
+            event: evt,
+          });
+          // Update the parent row comment
+          const toolCount = currentToolRow.subRows!.length - 1; // exclude collect-results
+          const toolNames = currentToolRow.subRows!
+            .filter((s) => s.label !== "collect-results")
+            .map((s) => s.label)
+            .join(", ");
+          currentToolRow.comment = `${toolCount} tool${toolCount !== 1 ? "s" : ""} executing (${toolNames})`;
+          flushToolRow();
+        } else {
+          // tool-use-all-complete without prior tool-use events
+          rows.push({
+            category: "Tools Execution",
+            comment: `${resultCount} result${resultCount !== 1 ? "s" : ""} collected`,
+            timestamp: evt.timestamp,
+            event: evt,
+          });
+        }
+        break;
+      }
+
+      case "message-output": {
+        flushToolRow();
+        flushMsgRow();
+
+        const content = v ? String(v.content ?? "") : "";
+        rows.push({
+          category: "Client Output",
+          comment: truncate(content, 140),
+          timestamp: evt.timestamp,
+          event: evt,
+          dividerAfter: true,
+        });
+        break;
+      }
+    }
+  }
+
+  flushToolRow();
+  flushMsgRow();
+
+  return rows;
+
+  function flushToolRow() {
+    if (currentToolRow) {
+      // If flushing without a collect-results (e.g. still in progress),
+      // set comment from accumulated tools
+      if (!currentToolRow.comment) {
+        const toolCount = currentToolRow.subRows!.length;
+        const toolNames = currentToolRow.subRows!.map((s) => s.label).join(", ");
+        currentToolRow.comment = `${toolCount} tool${toolCount !== 1 ? "s" : ""} executing (${toolNames})`;
+      }
+      rows.push(currentToolRow);
+      currentToolRow = null;
+    }
+  }
+
+  function flushMsgRow() {
+    if (currentMsgRow) {
+      rows.push(currentMsgRow);
+      currentMsgRow = null;
+    }
   }
 }
 
@@ -101,51 +336,30 @@ function truncate(s: string, max: number) {
   return s.length <= max ? s : s.slice(0, max) + "...";
 }
 
-// ── Components ──
-
-function CostBadge({ cost }: { cost: NonNullable<PipelineEvent["cost"]> }) {
-  const inputTok = cost.inputTokens ?? 0;
-  const outputTok = cost.outputTokens ?? 0;
-  const dollars = cost.dollars ?? (inputTok * INPUT_PRICE + outputTok * OUTPUT_PRICE);
-
-  return (
-    <span className="exec-cost-badge">
-      <span className="exec-cost-tokens">{inputTok} in / {outputTok} out</span>
-      <span className="exec-cost-dollars">{formatDollars(dollars)}</span>
-    </span>
-  );
+function formatTimestamp(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+  } as Intl.DateTimeFormatOptions);
 }
 
-function EventDetail({ event }: { event: PipelineEvent }) {
-  const v = event.value;
-
-  return (
-    <div className="exec-event-detail">
-      <div className="exec-event-meta-row">
-        <span className="exec-meta-item">partition: {event.partition}</span>
-        <span className="exec-meta-item">offset: {event.offset}</span>
-        {event.latencyMs != null && (
-          <span className="exec-meta-item">latency: {event.latencyMs}ms</span>
-        )}
-      </div>
-      {v && (
-        <pre className="exec-event-json">{JSON.stringify(v, null, 2)}</pre>
-      )}
-      {!v && event.rawValue && (
-        <pre className="exec-event-json">{event.rawValue}</pre>
-      )}
-    </div>
-  );
+/** Check if a tool sub-row has a failed status */
+function isFailedSubRow(comment: string): boolean {
+  return comment.includes("→ error");
 }
 
 // ── Main ──
 
 export function ExecutionTab({ pipelineEvents }: Props) {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
-  const [expandedIdx, setExpandedIdx] = useState<Set<number>>(new Set());
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [expandedSubKey, setExpandedSubKey] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Group events by session
   const sessions = useMemo(() => {
     const map = new Map<string, PipelineEvent[]>();
     for (const evt of pipelineEvents) {
@@ -158,44 +372,34 @@ export function ExecutionTab({ pipelineEvents }: Props) {
 
   const sessionIds = useMemo(() => [...sessions.keys()].reverse(), [sessions]);
 
-  const currentEvents = selectedSession ? (sessions.get(selectedSession) ?? []) : [];
+  const currentEvents = selectedSession
+    ? (sessions.get(selectedSession) ?? [])
+    : [];
 
-  // Compute totals for the selected session
-  const totals = useMemo(() => {
-    let dollars = 0;
-    let inputTokens = 0;
-    let outputTokens = 0;
-    for (const evt of currentEvents) {
-      if (evt.cost) {
-        inputTokens += evt.cost.inputTokens ?? 0;
-        outputTokens += evt.cost.outputTokens ?? 0;
-        dollars += evt.cost.dollars ?? 0;
-      }
-    }
-    return { dollars, inputTokens, outputTokens };
-  }, [currentEvents]);
+  const rows = useMemo(() => buildRows(currentEvents), [currentEvents]);
 
-  // Auto-scroll when new events arrive for selected session
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentEvents.length]);
-
-  const toggleExpand = useCallback((idx: number) => {
-    setExpandedIdx((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx); else next.add(idx);
-      return next;
-    });
-  }, []);
+  }, [rows.length]);
 
   const handleSelectSession = useCallback((sid: string) => {
     setSelectedSession(sid);
-    setExpandedIdx(new Set());
+    setExpandedIdx(null);
+    setExpandedSubKey(null);
+  }, []);
+
+  const toggleExpand = useCallback((idx: number) => {
+    setExpandedIdx((prev) => (prev === idx ? null : idx));
+    setExpandedSubKey(null);
+  }, []);
+
+  const toggleSubRow = useCallback((key: string) => {
+    setExpandedSubKey((prev) => (prev === key ? null : key));
   }, []);
 
   return (
     <div className="exec-tab">
-      {/* Sidebar: sessions */}
+      {/* Sidebar */}
       <div className="exec-sidebar">
         <div className="exec-sidebar-header">Sessions</div>
         {sessionIds.length === 0 && (
@@ -203,9 +407,16 @@ export function ExecutionTab({ pipelineEvents }: Props) {
         )}
         {sessionIds.map((sid) => {
           const events = sessions.get(sid)!;
-          const firstInput = events.find((e) => e.topic === "message-input");
+          const firstInput = events.find(
+            (e) => baseTopic(e.topic) === "message-input"
+          );
           const preview = firstInput?.value
-            ? truncate(String((firstInput.value as Record<string, unknown>).content ?? ""), 40)
+            ? truncate(
+                String(
+                  (firstInput.value as Record<string, unknown>).content ?? ""
+                ),
+                40
+              )
             : `${events.length} events`;
           return (
             <button
@@ -215,82 +426,128 @@ export function ExecutionTab({ pipelineEvents }: Props) {
             >
               <div className="exec-sidebar-id">{sid}</div>
               <div className="exec-sidebar-msg">{preview}</div>
-              <div className="exec-sidebar-time">
-                {events.length} events
-              </div>
+              <div className="exec-sidebar-time">{events.length} events</div>
             </button>
           );
         })}
       </div>
 
-      {/* Main: event timeline */}
+      {/* Main: table */}
       <div className="exec-main">
         {!selectedSession ? (
-          <div className="exec-main-empty">Select a session to view pipeline execution.</div>
+          <div className="exec-main-empty">
+            Select a session to view execution flow.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="exec-main-empty">
+            No execution steps yet for this session.
+          </div>
         ) : (
-          <div className="exec-pipeline">
-            <div className="exec-pipeline-header">
-              <div className="exec-pipeline-title">
-                <span className="exec-pipeline-id">{selectedSession}</span>
-                <span className="exec-pipeline-count">{currentEvents.length} events</span>
-              </div>
-              {(totals.inputTokens > 0 || totals.outputTokens > 0) && (
-                <div className="exec-pipeline-totals">
-                  <div className="exec-total-item">
-                    <span className="exec-total-label">Tokens</span>
-                    <span className="exec-total-value">
-                      {totals.inputTokens} in / {totals.outputTokens} out
-                    </span>
-                  </div>
-                  <div className="exec-total-item">
-                    <span className="exec-total-label">Total Cost</span>
-                    <span className="exec-total-value cost">{formatDollars(totals.dollars)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="et-table-wrap">
+            <table className="et-table">
+              <thead>
+                <tr>
+                  <th className="et-th et-th-category">Step</th>
+                  <th className="et-th et-th-comment">Comment</th>
+                  <th className="et-th et-th-time">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => {
+                  const isExpanded = expandedIdx === idx;
+                  const hasSubRows =
+                    row.subRows && row.subRows.length > 0;
 
-            <div className="exec-timeline">
-              {currentEvents.map((evt, idx) => {
-                const isExpanded = expandedIdx.has(idx);
-                const color = TOPIC_COLORS[evt.topic] ?? "#888";
-                const icon = TOPIC_ICONS[evt.topic] ?? "???";
-                const label = TOPIC_LABELS[evt.topic] ?? evt.topic;
-
-                return (
-                  <div key={`${evt.topic}-${evt.offset}-${idx}`} className="exec-step">
-                    {/* Rail */}
-                    <div className="exec-step-rail">
-                      <div className="exec-step-dot" style={{ borderColor: color }}>
-                        <span className="exec-step-icon" style={{ color }}>{icon}</span>
-                      </div>
-                      {idx < currentEvents.length - 1 && <div className="exec-step-line" />}
-                    </div>
-
-                    {/* Card */}
-                    <div className={`exec-step-card ${isExpanded ? "expanded" : "collapsed"}`}>
-                      <button className="exec-step-card-header" onClick={() => toggleExpand(idx)}>
-                        <span className={`exec-step-chevron ${isExpanded ? "open" : ""}`}>&#9654;</span>
-                        <span className="exec-topic-badge" style={{ background: color + "22", color }}>
-                          {evt.topic}
-                        </span>
-                        <span className="exec-step-label">{label}</span>
-                        {!isExpanded && (
-                          <span className="exec-step-summary">{eventSummary(evt)}</span>
-                        )}
-                        {evt.cost && <CostBadge cost={evt.cost} />}
-                        {evt.latencyMs != null && (
-                          <span className="exec-latency-badge">{evt.latencyMs}ms</span>
-                        )}
-                        <span className="exec-step-time">{formatTime(evt.timestamp)}</span>
-                      </button>
-                      {isExpanded && <EventDetail event={evt} />}
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={bottomRef} />
-            </div>
+                  return (
+                    <>
+                      <tr
+                        key={idx}
+                        className={`et-row ${isExpanded ? "expanded" : ""} ${hasSubRows ? "expandable" : ""}`}
+                        onClick={() => toggleExpand(idx)}
+                      >
+                        <td className="et-td et-td-category">
+                          <span className="et-category-label">
+                            {hasSubRows && (
+                              <span
+                                className={`et-chevron ${isExpanded ? "open" : ""}`}
+                              >
+                                &#9654;
+                              </span>
+                            )}
+                            {row.category}
+                          </span>
+                        </td>
+                        <td className="et-td et-td-comment">
+                          <div className="et-comment-text">{row.comment}</div>
+                        </td>
+                        <td className="et-td et-td-time">
+                          {formatTimestamp(row.timestamp)}
+                        </td>
+                      </tr>
+                      {isExpanded &&
+                        hasSubRows &&
+                        row.subRows!.map((sub, si) => {
+                          const failed = isFailedSubRow(sub.comment);
+                          const subKey = `${idx}-sub-${si}`;
+                          const isSubExpanded = expandedSubKey === subKey;
+                          return (
+                            <>
+                              <tr
+                                key={subKey}
+                                className={`et-row et-sub-row et-sub-clickable ${failed ? "et-failed" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSubRow(subKey);
+                                }}
+                              >
+                                <td className="et-td et-td-category">
+                                  <span className="et-sub-label">
+                                    {sub.label}
+                                  </span>
+                                </td>
+                                <td className="et-td et-td-comment">
+                                  <div className="et-comment-text">
+                                    {sub.comment}
+                                  </div>
+                                </td>
+                                <td className="et-td et-td-time">
+                                  {formatTimestamp(sub.timestamp)}
+                                </td>
+                              </tr>
+                              {isSubExpanded && sub.event.value && (
+                                <tr
+                                  key={`${subKey}-detail`}
+                                  className="et-row et-sub-row et-sub-detail-row"
+                                >
+                                  <td
+                                    className="et-td"
+                                    colSpan={3}
+                                    style={{ paddingLeft: 40 }}
+                                  >
+                                    <div className="et-json-tree">
+                                      <JsonView
+                                        data={sub.event.value}
+                                        shouldExpandNode={collapseAllNested}
+                                        style={darkStyles}
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          );
+                        })}
+                      {row.dividerAfter && (
+                        <tr className="et-spacer-row">
+                          <td colSpan={3} />
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div ref={bottomRef} />
           </div>
         )}
       </div>

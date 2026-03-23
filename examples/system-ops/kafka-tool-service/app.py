@@ -131,8 +131,9 @@ def kafka_consumer_group_lag(input_data):
         return {"error": "Missing 'group_id' parameter"}
 
     try:
-        future = admin.list_consumer_group_offsets([group_id])
-        offsets_result = future[group_id].result(timeout=10)
+        from confluent_kafka import ConsumerGroupTopicPartitions
+        future = admin.list_consumer_group_offsets([ConsumerGroupTopicPartitions(group_id)])
+        cg_tp = future[group_id].result(timeout=10)
 
         lag_consumer = Consumer({
             "bootstrap.servers": TARGET_BOOTSTRAP,
@@ -143,8 +144,8 @@ def kafka_consumer_group_lag(input_data):
         partitions_lag = []
         total_lag = 0
 
-        for tp, offset_meta in offsets_result.items():
-            committed = offset_meta.offset if offset_meta.offset >= 0 else 0
+        for tp in cg_tp.topic_partitions:
+            committed = tp.offset if tp.offset >= 0 else 0
             low, high = lag_consumer.get_watermark_offsets(
                 TopicPartition(tp.topic, tp.partition), timeout=10
             )

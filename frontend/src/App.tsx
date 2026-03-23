@@ -51,7 +51,7 @@ export default function App() {
         )}
         {activeTab === "execution" && <ExecutionTab pipelineEvents={pipelineEvents} />}
         {activeTab === "monitoring" && <MonitoringTab conversations={conversations} />}
-        {activeTab === "logs" && <LogsTab logs={logs} />}
+        {activeTab === "logs" && <LogsTab logs={logs} pipelineEvents={pipelineEvents} />}
       </main>
     </div>
   );

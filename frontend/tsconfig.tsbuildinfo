@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/usewebsocket.ts","./src/vite-env.d.ts","./src/tabs/chattab.tsx","./src/tabs/executiontab.tsx","./src/tabs/logstab.tsx","./src/tabs/monitoringtab.tsx"],"version":"5.7.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/usewebsocket.ts","./src/vite-env.d.ts","./src/tabs/chattab.tsx","./src/tabs/executiontab.tsx","./src/tabs/logstab.tsx","./src/tabs/monitoringtab.tsx","./src/tabs/pipelineeventstab.tsx"],"version":"5.7.3"}

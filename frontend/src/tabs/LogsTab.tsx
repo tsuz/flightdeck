@@ -1,14 +1,18 @@
 import { useRef, useEffect, useState } from "react";
-import type { LogEntry } from "../types";
+import type { LogEntry, PipelineEvent } from "../types";
+import { PipelineEventsTab } from "./PipelineEventsTab";
 import "./LogsTab.css";
 
 interface Props {
   logs: LogEntry[];
+  pipelineEvents: PipelineEvent[];
 }
+
+type SubTab = "logs" | "pipeline";
 
 const LEVEL_OPTIONS = ["all", "debug", "info", "warn", "error"] as const;
 
-export function LogsTab({ logs }: Props) {
+function LogsView({ logs }: { logs: LogEntry[] }) {
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -28,7 +32,7 @@ export function LogsTab({ logs }: Props) {
   }, [filtered.length, autoScroll]);
 
   return (
-    <div className="logs-tab">
+    <div className="logs-view">
       <div className="logs-toolbar">
         <div className="logs-filters">
           <select
@@ -75,6 +79,38 @@ export function LogsTab({ logs }: Props) {
           </div>
         ))}
         <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+export function LogsTab({ logs, pipelineEvents }: Props) {
+  const [subTab, setSubTab] = useState<SubTab>("logs");
+
+  return (
+    <div className="logs-tab">
+      <div className="logs-subtabs">
+        <button
+          className={`logs-subtab-btn ${subTab === "logs" ? "active" : ""}`}
+          onClick={() => setSubTab("logs")}
+        >
+          Logs
+          {logs.length > 0 && <span className="logs-subtab-badge">{logs.length}</span>}
+        </button>
+        <button
+          className={`logs-subtab-btn ${subTab === "pipeline" ? "active" : ""}`}
+          onClick={() => setSubTab("pipeline")}
+        >
+          Pipeline Events
+          {pipelineEvents.length > 0 && (
+            <span className="logs-subtab-badge">{pipelineEvents.length}</span>
+          )}
+        </button>
+      </div>
+
+      <div className="logs-subtab-content">
+        {subTab === "logs" && <LogsView logs={logs} />}
+        {subTab === "pipeline" && <PipelineEventsTab pipelineEvents={pipelineEvents} />}
       </div>
     </div>
   );

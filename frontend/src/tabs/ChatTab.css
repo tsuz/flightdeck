@@ -84,11 +84,23 @@
   word-break: break-word;
 }
 
+.chat-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .chat-time {
   font-size: 10px;
   opacity: 0.5;
-  margin-top: 4px;
-  text-align: right;
+}
+
+.chat-cost {
+  font-size: 10px;
+  font-family: monospace;
+  opacity: 0.6;
 }
 
 /* Input bar */

@@ -43,8 +43,15 @@ export function ChatTab({ messages, thinking, sessionId, onSend, onNewChat }: Pr
           <div key={msg.id} className={`chat-bubble ${msg.role}`}>
             <div className="chat-role">{msg.role === "user" ? "You" : "Agent"}</div>
             <div className="chat-content">{msg.content}</div>
-            <div className="chat-time">
-              {new Date(msg.timestamp).toLocaleTimeString()}
+            <div className="chat-meta">
+              <span className="chat-time">
+                {new Date(msg.timestamp).toLocaleTimeString()}
+              </span>
+              {msg.cost != null && (
+                <span className="chat-cost">
+                  {msg.cost < 0.01 ? `$${msg.cost.toFixed(6)}` : `$${msg.cost.toFixed(4)}`}
+                </span>
+              )}
             </div>
           </div>
         ))}

@@ -133,6 +133,9 @@ public class ChatWebSocketServer extends WebSocketServer {
             chatMessage.put("role", "assistant");
             chatMessage.put("content", response.path("content").asText(""));
             chatMessage.put("timestamp", response.path("timestamp").asText(""));
+            if (response.has("cost") && !response.get("cost").isNull()) {
+                chatMessage.put("cost", response.get("cost").asDouble());
+            }
 
             // Wrap in WebSocket envelope
             ObjectNode envelope = mapper.createObjectNode();

@@ -275,6 +275,7 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
             .map((s) => s.label)
             .join(", ");
           currentToolRow.comment = `${toolCount} tool${toolCount !== 1 ? "s" : ""} executing (${toolNames})`;
+          currentToolRow.timestamp = evt.timestamp;
           flushToolRow();
         } else {
           // tool-use-all-complete without prior tool-use events

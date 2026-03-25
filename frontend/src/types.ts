@@ -3,6 +3,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  cost?: number;
 }
 
 export interface ToolUseBlock {

@@ -18,7 +18,7 @@ import java.util.List;
 public record SessionContext(
         @JsonProperty("session_id") String sessionId,
         @JsonProperty("user_id")    String userId,
-        @JsonProperty("cost")       double cost,
+        @JsonProperty("cost")       Double cost,
         @JsonProperty("llm_calls")  int llmCalls,
         @JsonProperty("messages")   List<MessageInput> messages,  // latest turn only
         @JsonProperty("history")    List<MessageInput> history,   // full conversation
@@ -26,6 +26,6 @@ public record SessionContext(
 ) {
     /** Empty context — used as the Kafka Streams aggregate initialiser. */
     public static SessionContext empty(String sessionId) {
-        return new SessionContext(sessionId, null, 0.0, 0, List.of(), List.of(), null);
+        return new SessionContext(sessionId, null, null, 0, List.of(), List.of(), null);
     }
 }

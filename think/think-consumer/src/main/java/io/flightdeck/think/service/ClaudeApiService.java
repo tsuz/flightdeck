@@ -26,9 +26,25 @@ public class ClaudeApiService {
 
     private static final String ANTHROPIC_VERSION = "2023-06-01";
 
-    // Sonnet 4 pricing per million tokens
-    private static final double INPUT_PRICE_PER_M  = 3.0;
-    private static final double OUTPUT_PRICE_PER_M = 15.0;
+    // Token pricing from environment variables (per-token, not per-million)
+    private static final Double INPUT_TOKEN_PRICE;
+    private static final Double OUTPUT_TOKEN_PRICE;
+
+    static {
+        String inputPriceStr = System.getenv("INPUT_TOKEN_PRICE");
+        String outputPriceStr = System.getenv("OUTPUT_TOKEN_PRICE");
+
+        if (inputPriceStr == null || inputPriceStr.isBlank()
+                || outputPriceStr == null || outputPriceStr.isBlank()) {
+            log.warn("INPUT_TOKEN_PRICE and/or OUTPUT_TOKEN_PRICE not set — cost will not be calculated");
+            INPUT_TOKEN_PRICE = null;
+            OUTPUT_TOKEN_PRICE = null;
+        } else {
+            INPUT_TOKEN_PRICE = Double.parseDouble(inputPriceStr);
+            OUTPUT_TOKEN_PRICE = Double.parseDouble(outputPriceStr);
+            log.info("Token pricing loaded: INPUT_TOKEN_PRICE={} OUTPUT_TOKEN_PRICE={}", INPUT_TOKEN_PRICE, OUTPUT_TOKEN_PRICE);
+        }
+    }
 
     private final HttpClient httpClient;
     private final ObjectMapper mapper;
@@ -123,9 +139,10 @@ public class ClaudeApiService {
             int inputTokens = usage != null ? usage.path("input_tokens").asInt(0) : 0;
             int outputTokens = usage != null ? usage.path("output_tokens").asInt(0) : 0;
 
-            // Calculate cost
-            double cost = (inputTokens * INPUT_PRICE_PER_M / 1_000_000.0)
-                        + (outputTokens * OUTPUT_PRICE_PER_M / 1_000_000.0);
+            // Calculate cost (null if pricing env vars not set)
+            Double cost = (INPUT_TOKEN_PRICE != null && OUTPUT_TOKEN_PRICE != null)
+                    ? (inputTokens / 1_000_000.0 * INPUT_TOKEN_PRICE) + (outputTokens / 1_000_000.0 * OUTPUT_TOKEN_PRICE)
+                    : null;
 
             // Determine if this is an end turn
             String stopReason = root.path("stop_reason").asText("end_turn");
@@ -202,14 +219,15 @@ public class ClaudeApiService {
                 }
             }
 
-            log.info("[{}] Claude response: input_tokens={} output_tokens={} tool_uses={} end_turn={} cost=${}",
+            log.info("[{}] Claude response: input_tokens={} output_tokens={} tool_uses={} end_turn={} cost={}",
                     sessionId, inputTokens, outputTokens, toolUses.size(), endTurn,
-                    String.format("%.6f", cost));
+                    cost != null ? String.format("$%.6f", cost) : "null");
 
             return new ThinkResponse(
                     sessionId,
                     userId,
                     cost,
+                    null,   // prevSessionCost — set by ThinkConsumer
                     inputTokens,
                     outputTokens,
                     responseMessages,

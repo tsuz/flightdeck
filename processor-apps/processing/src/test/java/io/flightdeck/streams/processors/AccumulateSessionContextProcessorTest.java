@@ -145,7 +145,7 @@ class AccumulateSessionContextProcessorTest {
 
     private static ThinkResponse thinkResp(String sid, String uid, double cost,
                                            List<MessageInput> msgs) {
-        return new ThinkResponse(sid, uid, cost, 100, 50, msgs, List.of(), true, TS);
+        return new ThinkResponse(sid, uid, cost, null, 100, 50, msgs, List.of(), true, TS);
     }
 
     private static MessageInput userMsg(String sid, String uid, String content) {

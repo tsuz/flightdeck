@@ -104,7 +104,7 @@ public class MemoirSessionEndProcessor {
         // Wrap the full history into a ThinkResponse for the memoir updater
         ThinkResponse asResponse = ctx != null
                 ? new ThinkResponse(
-                        ctx.sessionId(), ctx.userId(), ctx.cost(),
+                        ctx.sessionId(), ctx.userId(), ctx.cost(), null,
                         0, 0, ctx.history(), null, true,
                         Instant.now().toString())
                 : null;

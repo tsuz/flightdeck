@@ -80,7 +80,13 @@ public class AccumulateSessionContextProcessor {
                             List<MessageInput> updatedHistory = appendMessages(
                                     current.history(), response.messages());
 
-                            double updatedCost  = current.cost()     + response.cost();
+                            Double updatedCost;
+                            if (current.cost() == null && response.cost() == null) {
+                                updatedCost = null;
+                            } else {
+                                updatedCost = (current.cost() != null ? current.cost() : 0.0)
+                                            + (response.cost() != null ? response.cost() : 0.0);
+                            }
                             int    updatedCalls = current.llmCalls() + 1;
 
                             List<MessageInput> latestMessages =

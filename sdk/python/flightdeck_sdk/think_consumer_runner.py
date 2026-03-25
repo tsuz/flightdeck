@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import signal
 import time
 import urllib.request
@@ -43,9 +44,17 @@ class ThinkConsumerConfig:
 
 
 class ThinkConsumerRunner:
-    # Pricing per million tokens
-    INPUT_COST_PER_M = 3.0
-    OUTPUT_COST_PER_M = 15.0
+    # Token pricing from environment variables (per-token, not per-million)
+    _input_price_str = os.environ.get("INPUT_TOKEN_PRICE")
+    _output_price_str = os.environ.get("OUTPUT_TOKEN_PRICE")
+
+    if _input_price_str and _output_price_str:
+        INPUT_TOKEN_PRICE: Optional[float] = float(_input_price_str)
+        OUTPUT_TOKEN_PRICE: Optional[float] = float(_output_price_str)
+    else:
+        logger.warning("INPUT_TOKEN_PRICE and/or OUTPUT_TOKEN_PRICE not set — cost will not be calculated")
+        INPUT_TOKEN_PRICE = None
+        OUTPUT_TOKEN_PRICE = None
 
     def __init__(self, config: ThinkConsumerConfig):
         self._config = config
@@ -106,6 +115,46 @@ class ThinkConsumerRunner:
         history = context.get("history", [])
         latest_input = context.get("latestInput", {})
         memoir_context = context.get("memoirContext", "")
+        cumulative_cost = context.get("cost")
+
+        # Check session budget
+        budget_str = os.environ.get("BUDGET_PRICE_PER_SESSION")
+        if budget_str and cumulative_cost is not None:
+            budget = float(budget_str)
+            if cumulative_cost >= budget:
+                logger.warning(
+                    "[%s] Session budget exceeded: $%.6f >= $%.2f",
+                    session_id, cumulative_cost, budget,
+                )
+                budget_response = {
+                    "sessionId": session_id,
+                    "userId": user_id,
+                    "cost": None,
+                    "prevSessionCost": cumulative_cost,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "messages": [
+                        {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                            "role": "assistant",
+                            "content": f"You have used too many tokens. Session budget of ${budget:.2f} has been reached.",
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        }
+                    ],
+                    "toolUses": [],
+                    "endTurn": True,
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+                self._producer.produce(
+                    topic=self._config.output_topic,
+                    key=session_id,
+                    value=json.dumps(budget_response),
+                )
+                self._producer.flush()
+                tp = TopicPartition(topic, partition, offset + 1)
+                self._consumer.store_offsets(offsets=[tp])
+                return
 
         # Build system prompt
         system_prompt = self._build_system_prompt(memoir_context, context)
@@ -116,8 +165,9 @@ class ThinkConsumerRunner:
         # Call Claude API
         response = self._call_claude(system_prompt, messages)
 
-        # Parse response into ThinkResponse
+        # Parse response into ThinkResponse and attach prevSessionCost
         think_response = self._parse_response(response, session_id, user_id, latest_input)
+        think_response["prevSessionCost"] = cumulative_cost
 
         # Produce to output topic
         self._producer.produce(
@@ -230,8 +280,9 @@ class ThinkConsumerRunner:
         usage = response.get("usage", {})
         input_tokens = usage.get("input_tokens", 0)
         output_tokens = usage.get("output_tokens", 0)
-        cost = (input_tokens * self.INPUT_COST_PER_M / 1_000_000) + \
-               (output_tokens * self.OUTPUT_COST_PER_M / 1_000_000)
+        cost = (input_tokens / 1_000_000 * self.INPUT_TOKEN_PRICE + output_tokens / 1_000_000 * self.OUTPUT_TOKEN_PRICE) \
+               if self.INPUT_TOKEN_PRICE is not None and self.OUTPUT_TOKEN_PRICE is not None \
+               else None
 
         stop_reason = response.get("stop_reason", "end_turn")
         end_turn = stop_reason != "tool_use"
@@ -284,7 +335,7 @@ class ThinkConsumerRunner:
         return {
             "sessionId": session_id,
             "userId": user_id,
-            "cost": round(cost, 6),
+            "cost": round(cost, 6) if cost is not None else None,
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
             "messages": messages,

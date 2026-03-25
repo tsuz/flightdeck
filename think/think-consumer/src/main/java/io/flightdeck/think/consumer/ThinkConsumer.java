@@ -134,17 +134,58 @@ public class ThinkConsumer implements AutoCloseable {
                 context.history() != null ? context.history().size() : 0,
                 context.latestInput() != null ? context.latestInput().role() : "null");
 
-        // 2. Build system prompt with memoir context
+        // 2. Check session budget before calling Claude API
+        if (AppConfig.BUDGET_PRICE_PER_SESSION != null
+                && context.cost() != null
+                && context.cost() >= AppConfig.BUDGET_PRICE_PER_SESSION) {
+
+            log.warn("[{}] Session budget exceeded: cumulative_cost=${} >= budget=${}",
+                    sessionId,
+                    String.format("%.6f", context.cost()),
+                    String.format("%.2f", AppConfig.BUDGET_PRICE_PER_SESSION));
+
+            String budgetMessage = String.format(
+                    "You have used too many tokens. Session budget of $%.2f has been reached.",
+                    AppConfig.BUDGET_PRICE_PER_SESSION);
+
+            ThinkResponse budgetResponse = new ThinkResponse(
+                    sessionId,
+                    userId,
+                    null,
+                    context.cost(),
+                    0,
+                    0,
+                    List.of(new MessageInput(
+                            sessionId, userId, "assistant", budgetMessage,
+                            java.time.Instant.now().toString(), null
+                    )),
+                    null,
+                    true,
+                    java.time.Instant.now().toString()
+            );
+
+            String outputJson = mapper.writeValueAsString(budgetResponse);
+            ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
+                    AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
+            producer.send(outputRecord);
+            producer.flush();
+            return;
+        }
+
+        // 3. Build system prompt with memoir context
         String systemPrompt = buildSystemPrompt(context.memoirContext());
 
-        // 3. Convert history + latest input to Claude message format
+        // 4. Convert history + latest input to Claude message format
         List<Map<String, Object>> claudeMessages = ClaudeApiService.toClaudeMessages(
                 context.history(), context.latestInput());
 
-        // 4. Call Claude API
+        // 5. Call Claude API
         ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
 
-        // 5. Prepend the user's latestInput to the response so downstream
+        // 6. Attach prevSessionCost from the enriched context
+        Double prevSessionCost = context.cost();
+
+        // 7. Prepend the user's latestInput to the response so downstream
         //    processors see the request-response pair for this turn.
         if (context.latestInput() != null) {
             List<MessageInput> augmentedMessages = new ArrayList<>();
@@ -156,6 +197,7 @@ public class ThinkConsumer implements AutoCloseable {
                     thinkResponse.sessionId(),
                     thinkResponse.userId(),
                     thinkResponse.cost(),
+                    prevSessionCost,
                     thinkResponse.inputTokens(),
                     thinkResponse.outputTokens(),
                     augmentedMessages,
@@ -163,9 +205,23 @@ public class ThinkConsumer implements AutoCloseable {
                     thinkResponse.endTurn(),
                     thinkResponse.timestamp()
             );
+        } else {
+            // Still need to set prevSessionCost even without latestInput prepend
+            thinkResponse = new ThinkResponse(
+                    thinkResponse.sessionId(),
+                    thinkResponse.userId(),
+                    thinkResponse.cost(),
+                    prevSessionCost,
+                    thinkResponse.inputTokens(),
+                    thinkResponse.outputTokens(),
+                    thinkResponse.messages(),
+                    thinkResponse.toolUses(),
+                    thinkResponse.endTurn(),
+                    thinkResponse.timestamp()
+            );
         }
 
-        // 6. Produce to think-request-response
+        // 8. Produce to think-request-response
         String outputJson = mapper.writeValueAsString(thinkResponse);
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
                 AppConfig.OUTPUT_TOPIC, sessionId, outputJson);

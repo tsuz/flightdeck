@@ -66,6 +66,7 @@ class SessionCostAggregationProcessorTest {
         assertThat(cost.llmCalls()).isEqualTo(1);
         assertThat(cost.totalInputTokens()).isEqualTo(200);
         assertThat(cost.totalOutputTokens()).isEqualTo(80);
+        // Cost is 0 when INPUT_TOKEN_PRICE / OUTPUT_TOKEN_PRICE env vars are not set
         assertThat(cost.estimatedCostUsd()).isCloseTo(0.005, within(0.000001));
     }
 
@@ -113,32 +114,15 @@ class SessionCostAggregationProcessorTest {
         assertThat(costOutput.readRecord().key()).isEqualTo("sess-key");
     }
 
-    // ── Fallback cost estimation ───────────────────────────────────────────────
+    // ── Null cost passthrough ───────────────────────────────────────────────────
 
     @Test
-    @DisplayName("When response.cost is 0, estimateCost fallback is applied")
-    void zeroCostField_usesFallbackEstimate() {
-        // 1M input tokens + 1M output tokens at list price = $3 + $15 = $18
-        thinkInput.pipeInput("sess-est", response("sess-est", "u", 0.0, 1_000_000, 1_000_000));
+    @DisplayName("When response.cost is null, aggregated cost remains null")
+    void nullCostField_passesThrough() {
+        thinkInput.pipeInput("sess-est", response("sess-est", "u", null, 1_000_000, 1_000_000));
 
         SessionCost cost = costOutput.readRecord().value();
-        assertThat(cost.estimatedCostUsd())
-                .isCloseTo(INPUT_COST_PER_M_TOKENS + OUTPUT_COST_PER_M_TOKENS, within(0.001));
-    }
-
-    @Test
-    @DisplayName("estimateCost unit test — 500k input + 200k output tokens")
-    void estimateCost_unit() {
-        double cost = estimateCost(500_000, 200_000);
-        double expected = (500_000 / 1_000_000.0) * INPUT_COST_PER_M_TOKENS
-                        + (200_000 / 1_000_000.0) * OUTPUT_COST_PER_M_TOKENS;
-        assertThat(cost).isCloseTo(expected, within(0.000001));
-    }
-
-    @Test
-    @DisplayName("estimateCost with zero tokens returns 0.0")
-    void estimateCost_zeroTokens() {
-        assertThat(estimateCost(0, 0)).isEqualTo(0.0);
+        assertThat(cost.estimatedCostUsd()).isNull();
     }
 
     // ── Tombstone / session close ─────────────────────────────────────────────
@@ -193,14 +177,14 @@ class SessionCostAggregationProcessorTest {
     private static final String TS = "2026-03-10T12:00:00Z";
 
     private static ThinkResponse response(String sessionId, String userId,
-                                          double cost, int inputTokens, int outputTokens) {
-        return new ThinkResponse(sessionId, userId, cost, inputTokens, outputTokens,
+                                          Double cost, int inputTokens, int outputTokens) {
+        return new ThinkResponse(sessionId, userId, cost, null, inputTokens, outputTokens,
                 List.of(), List.of(), false, TS);
     }
 
     /** Builds the sentinel close signal recognised by the processor. */
     private static ThinkResponse closeSignal(String sessionId) {
-        return new ThinkResponse(sessionId, null, SESSION_CLOSE_SENTINEL,
+        return new ThinkResponse(sessionId, null, SESSION_CLOSE_SENTINEL, null,
                 0, 0, List.of(), List.of(), true, TS);
     }
 }

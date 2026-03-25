@@ -42,6 +42,14 @@ public final class AppConfig {
     // ── Tools ─────────────────────────────────────────────────────────────
     public static final String TOOLS_JSON_FILE = env("TOOLS_JSON_FILE", "");
 
+    // ── Budget ────────────────────────────────────────────────────────────
+    public static final Double BUDGET_PRICE_PER_SESSION;
+
+    static {
+        String val = System.getenv("BUDGET_PRICE_PER_SESSION");
+        BUDGET_PRICE_PER_SESSION = (val != null && !val.isBlank()) ? Double.parseDouble(val) : null;
+    }
+
     // ── Consumer tuning ─────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =
             Long.parseLong(env("POLL_TIMEOUT_MS", "1000"));

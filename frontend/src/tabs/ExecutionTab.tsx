@@ -293,11 +293,20 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
         flushMsgRow();
 
         const content = v ? String(v.content ?? "") : "";
+        const outputComment = truncate(content, 140);
         rows.push({
           category: "Client Output",
-          comment: truncate(content, 140),
+          comment: outputComment,
           timestamp: evt.timestamp,
           event: evt,
+          subRows: [
+            {
+              label: "message-output",
+              comment: outputComment,
+              timestamp: evt.timestamp,
+              event: evt,
+            },
+          ],
           dividerAfter: true,
         });
         break;

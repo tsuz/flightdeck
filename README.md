@@ -2,7 +2,7 @@
 
 Fault tolerant, event driven, extensible AI Agent framework
 
-![FlightDeck](assets/img/flightdeck.png)
+![FlightDeck](assets/img/ui-execution.png)
 
 ## Getting Started
 

@@ -71,6 +71,9 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | `MEMOIR_ENABLED` | `true` | Enable per-user long-term memory across sessions. Set to `false` to disable. |
 | `MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS` | `20` | Seconds of inactivity before a session ends and memoir is saved. Only applies when `MEMOIR_ENABLED=true`. |
 | `MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS` | `5` | How often (in seconds) to check for inactive sessions. Only applies when `MEMOIR_ENABLED=true`. |
+| `INPUT_TOKEN_PRICE` | *(optional)* | Price per 1M input tokens (e.g. `3` for $3/MTok). If not set, cost tracking is disabled. |
+| `OUTPUT_TOKEN_PRICE` | *(optional)* | Price per 1M output tokens (e.g. `15` for $15/MTok). If not set, cost tracking is disabled. |
+| `BUDGET_PRICE_PER_SESSION` | *(optional)* | Maximum dollar cost allowed per session. When the session cost goes over this limit, the agent stops processing on the next Think layer. Requires token prices to be set. |
 
 ### Tests
 

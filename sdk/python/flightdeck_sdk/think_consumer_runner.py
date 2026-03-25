@@ -115,6 +115,46 @@ class ThinkConsumerRunner:
         history = context.get("history", [])
         latest_input = context.get("latestInput", {})
         memoir_context = context.get("memoirContext", "")
+        cumulative_cost = context.get("cost")
+
+        # Check session budget
+        budget_str = os.environ.get("BUDGET_PRICE_PER_SESSION")
+        if budget_str and cumulative_cost is not None:
+            budget = float(budget_str)
+            if cumulative_cost >= budget:
+                logger.warning(
+                    "[%s] Session budget exceeded: $%.6f >= $%.2f",
+                    session_id, cumulative_cost, budget,
+                )
+                budget_response = {
+                    "sessionId": session_id,
+                    "userId": user_id,
+                    "cost": None,
+                    "prevSessionCost": cumulative_cost,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "messages": [
+                        {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                            "role": "assistant",
+                            "content": f"You have used too many tokens. Session budget of ${budget:.2f} has been reached.",
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        }
+                    ],
+                    "toolUses": [],
+                    "endTurn": True,
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                }
+                self._producer.produce(
+                    topic=self._config.output_topic,
+                    key=session_id,
+                    value=json.dumps(budget_response),
+                )
+                self._producer.flush()
+                tp = TopicPartition(topic, partition, offset + 1)
+                self._consumer.store_offsets(offsets=[tp])
+                return
 
         # Build system prompt
         system_prompt = self._build_system_prompt(memoir_context, context)
@@ -125,8 +165,9 @@ class ThinkConsumerRunner:
         # Call Claude API
         response = self._call_claude(system_prompt, messages)
 
-        # Parse response into ThinkResponse
+        # Parse response into ThinkResponse and attach prevSessionCost
         think_response = self._parse_response(response, session_id, user_id, latest_input)
+        think_response["prevSessionCost"] = cumulative_cost
 
         # Produce to output topic
         self._producer.produce(

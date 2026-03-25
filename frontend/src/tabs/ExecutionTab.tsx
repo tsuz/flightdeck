@@ -183,6 +183,15 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
           comment = `Looking up ${count} source${count !== 1 ? "s" : ""} from ${names}`;
         }
 
+        const inputTokens = v?.input_tokens != null ? Number(v.input_tokens) : null;
+        const outputTokens = v?.output_tokens != null ? Number(v.output_tokens) : null;
+        if (inputTokens != null || outputTokens != null) {
+          const parts: string[] = [];
+          if (inputTokens != null) parts.push(`in: ${inputTokens}`);
+          if (outputTokens != null) parts.push(`out: ${outputTokens}`);
+          comment += ` (${parts.join(", ")})`;
+        }
+
         const thinkSubRows: SubRow[] = [];
 
         // Request sub-row: the enriched input that was sent to the LLM

@@ -178,13 +178,13 @@ class SessionCostAggregationProcessorTest {
 
     private static ThinkResponse response(String sessionId, String userId,
                                           Double cost, int inputTokens, int outputTokens) {
-        return new ThinkResponse(sessionId, userId, cost, inputTokens, outputTokens,
+        return new ThinkResponse(sessionId, userId, cost, null, inputTokens, outputTokens,
                 List.of(), List.of(), false, TS);
     }
 
     /** Builds the sentinel close signal recognised by the processor. */
     private static ThinkResponse closeSignal(String sessionId) {
-        return new ThinkResponse(sessionId, null, SESSION_CLOSE_SENTINEL,
+        return new ThinkResponse(sessionId, null, SESSION_CLOSE_SENTINEL, null,
                 0, 0, List.of(), List.of(), true, TS);
     }
 }

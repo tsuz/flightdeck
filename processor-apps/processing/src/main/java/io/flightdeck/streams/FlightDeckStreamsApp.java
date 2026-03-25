@@ -11,6 +11,7 @@ import io.flightdeck.streams.processors.MemoirSessionEndProcessor;
 import io.flightdeck.streams.processors.SessionEndProcessor;
 import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
 import io.flightdeck.streams.model.SessionContext;
+import io.flightdeck.streams.model.SessionCost;
 import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -49,6 +50,7 @@ public class FlightDeckStreamsApp {
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
     static final String SESSION_CONTEXT_STORE = "session-context-store";
+    static final String SESSION_COST_TABLE_STORE = "session-cost-table-store";
 
     public static void main(String[] args) {
         Properties props = buildConfig();
@@ -131,9 +133,19 @@ public class FlightDeckStreamsApp {
                         .withValueSerde(JsonSerde.of(SessionContext.class))
         );
 
+        // ── Shared KTable: session-cost (aggregated cost per session) ────────
+        KTable<String, SessionCost> sessionCostTable = builder.table(
+                Topics.SESSION_COST,
+                Consumed.with(Serdes.String(), JsonSerde.of(SessionCost.class)),
+                Materialized.<String, SessionCost>as(
+                                Stores.persistentKeyValueStore(SESSION_COST_TABLE_STORE))
+                        .withKeySerde(Serdes.String())
+                        .withValueSerde(JsonSerde.of(SessionCost.class))
+        );
+
         // ── Register each processor fragment ──────────────────────────────────
         AccumulateSessionContextProcessor.register(builder, thinkStream);
-        EnrichInputMessageProcessor.register(builder, memoirTable, sessionContextTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, sessionContextTable, sessionCostTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
         SessionCostAggregationProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream);

@@ -95,7 +95,7 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("endTurn=true with null tool_uses list is forwarded")
     void endTurn_nullToolUses_isForwarded() {
-        ThinkResponse response = new ThinkResponse("sess-4", "user-D", 0.01,
+        ThinkResponse response = new ThinkResponse("sess-4", "user-D", 0.01, null,
                 100, 50,
                 List.of(assistantMsg("sess-4", "user-D", "Done.")),
                 null, true, TS);
@@ -232,7 +232,7 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("toUserResponse: empty content when ThinkResponse has no messages")
     void toUserResponse_noMessages_emptyContent() {
-        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, 0, 0,
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
                 List.of(), List.of(), true, TS);
 
         UserResponse result = toUserResponse("s", resp);
@@ -253,14 +253,14 @@ class EndTurnProcessorTest {
                                                   List<MessageInput> messages,
                                                   List<ToolUseItem> tools,
                                                   double cost, int inputTokens, int outputTokens) {
-        return new ThinkResponse(sessionId, userId, cost, inputTokens, outputTokens,
+        return new ThinkResponse(sessionId, userId, cost, null, inputTokens, outputTokens,
                 messages, tools, true, TS);
     }
 
     private static ThinkResponse midTurnResponse(String sessionId, String userId,
                                                    List<MessageInput> messages,
                                                    List<ToolUseItem> tools) {
-        return new ThinkResponse(sessionId, userId, 0.005, 150, 60,
+        return new ThinkResponse(sessionId, userId, 0.005, null, 150, 60,
                 messages, tools, false, TS);
     }
 

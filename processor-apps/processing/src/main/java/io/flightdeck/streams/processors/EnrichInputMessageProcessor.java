@@ -4,6 +4,7 @@ import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.MessageInput;
 import io.flightdeck.streams.model.FullSessionContext;
 import io.flightdeck.streams.model.SessionContext;
+import io.flightdeck.streams.model.SessionCost;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -25,10 +26,13 @@ import java.util.List;
  *         │◄──────────────  session-context  (KTable — accumulated history)
  *         │
  *         │   leftJoin
+ *         │◄──────────────  session-cost     (KTable — aggregated cost per session)
+ *         │
+ *         │   leftJoin
  *         │◄──────────────  memoir-context   (KTable — long-term memoir, shared)
  *         │
  *         ▼
- *   enriched-message-input  (KStream — history + memoir + latest input)
+ *   enriched-message-input  (KStream — history + cost + memoir + latest input)
  * </pre>
  */
 public class EnrichInputMessageProcessor {
@@ -36,12 +40,14 @@ public class EnrichInputMessageProcessor {
     private static final Logger log = LoggerFactory.getLogger(EnrichInputMessageProcessor.class);
 
     /**
-     * @param memoirTable   shared KTable for memoir-context (keyed by userId)
-     * @param contextTable  shared KTable for session-context (keyed by sessionId)
+     * @param memoirTable      shared KTable for memoir-context (keyed by userId)
+     * @param contextTable     shared KTable for session-context (keyed by sessionId)
+     * @param sessionCostTable shared KTable for session-cost (keyed by sessionId)
      */
     public static void register(StreamsBuilder builder,
                                 KTable<String, String> memoirTable,
-                                KTable<String, SessionContext> contextTable) {
+                                KTable<String, SessionContext> contextTable,
+                                KTable<String, SessionCost> sessionCostTable) {
 
         // ── Left side: incoming user messages ────────────────────────────────
         KStream<String, MessageInput> inputStream = builder.stream(
@@ -62,6 +68,18 @@ public class EnrichInputMessageProcessor {
                                 Serdes.String(),
                                 JsonSerde.of(MessageInput.class),
                                 JsonSerde.of(SessionContext.class)
+                        )
+                );
+
+        // ── Join: enriched ⟕ session-cost (attach aggregated cost) ──────────
+        enriched = enriched
+                .leftJoin(
+                        sessionCostTable,
+                        EnrichInputMessageProcessor::enrichWithCost,
+                        Joined.with(
+                                Serdes.String(),
+                                JsonSerde.of(FullSessionContext.class),
+                                JsonSerde.of(SessionCost.class)
                         )
                 );
 
@@ -108,10 +126,27 @@ public class EnrichInputMessageProcessor {
         return new FullSessionContext(
                 message.sessionId(),
                 userId,
+                null,
                 history,
                 message,
                 null,
                 Instant.now().toString()
+        );
+    }
+
+    /**
+     * Join: attach aggregated session cost from session-cost KTable.
+     */
+    static FullSessionContext enrichWithCost(FullSessionContext enriched, SessionCost sessionCost) {
+        Double cost = (sessionCost != null) ? sessionCost.estimatedCostUsd() : null;
+        return new FullSessionContext(
+                enriched.sessionId(),
+                enriched.userId(),
+                cost,
+                enriched.history(),
+                enriched.latestInput(),
+                enriched.memoirContext(),
+                enriched.timestamp()
         );
     }
 
@@ -122,6 +157,7 @@ public class EnrichInputMessageProcessor {
         return new FullSessionContext(
                 enriched.sessionId(),
                 enriched.userId(),
+                enriched.cost(),
                 enriched.history(),
                 enriched.latestInput(),
                 memoir,

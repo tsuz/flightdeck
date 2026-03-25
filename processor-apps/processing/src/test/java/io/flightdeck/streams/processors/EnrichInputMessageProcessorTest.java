@@ -53,8 +53,11 @@ class EnrichInputMessageProcessorTest {
         KTable<String, SessionContext> contextTable = builder.table(
                 Topics.SESSION_CONTEXT,
                 Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)));
+        KTable<String, SessionCost> sessionCostTable = builder.table(
+                Topics.SESSION_COST,
+                Consumed.with(Serdes.String(), JsonSerde.of(SessionCost.class)));
 
-        EnrichInputMessageProcessor.register(builder, memoirTable, contextTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, contextTable, sessionCostTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");

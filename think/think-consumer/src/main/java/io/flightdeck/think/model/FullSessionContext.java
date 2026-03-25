@@ -9,6 +9,7 @@ import java.util.List;
 public record FullSessionContext(
         @JsonProperty("session_id")      String sessionId,
         @JsonProperty("user_id")         String userId,
+        @JsonProperty("cost")            Double cost,
         @JsonProperty("history")         List<MessageInput> history,
         @JsonProperty("latest_input")    MessageInput latestInput,
         @JsonProperty("memoir_context")  String memoirContext,

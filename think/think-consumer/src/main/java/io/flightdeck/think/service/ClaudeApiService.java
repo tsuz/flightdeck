@@ -227,6 +227,7 @@ public class ClaudeApiService {
                     sessionId,
                     userId,
                     cost,
+                    null,   // prevSessionCost — set by ThinkConsumer
                     inputTokens,
                     outputTokens,
                     responseMessages,

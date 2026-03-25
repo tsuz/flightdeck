@@ -183,6 +183,15 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
           comment = `Looking up ${count} source${count !== 1 ? "s" : ""} from ${names}`;
         }
 
+        const inputTokens = v?.input_tokens != null ? Number(v.input_tokens) : null;
+        const outputTokens = v?.output_tokens != null ? Number(v.output_tokens) : null;
+        if (inputTokens != null || outputTokens != null) {
+          const parts: string[] = [];
+          if (inputTokens != null) parts.push(`in: ${inputTokens}`);
+          if (outputTokens != null) parts.push(`out: ${outputTokens}`);
+          comment += ` (${parts.join(", ")})`;
+        }
+
         const thinkSubRows: SubRow[] = [];
 
         // Request sub-row: the enriched input that was sent to the LLM
@@ -275,6 +284,7 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
             .map((s) => s.label)
             .join(", ");
           currentToolRow.comment = `${toolCount} tool${toolCount !== 1 ? "s" : ""} executing (${toolNames})`;
+          currentToolRow.timestamp = evt.timestamp;
           flushToolRow();
         } else {
           // tool-use-all-complete without prior tool-use events
@@ -293,11 +303,20 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
         flushMsgRow();
 
         const content = v ? String(v.content ?? "") : "";
+        const outputComment = truncate(content, 140);
         rows.push({
           category: "Client Output",
-          comment: truncate(content, 140),
+          comment: outputComment,
           timestamp: evt.timestamp,
           event: evt,
+          subRows: [
+            {
+              label: "message-output",
+              comment: outputComment,
+              timestamp: evt.timestamp,
+              event: evt,
+            },
+          ],
           dividerAfter: true,
         });
         break;
@@ -449,6 +468,7 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                 <tr>
                   <th className="et-th et-th-category">Step</th>
                   <th className="et-th et-th-comment">Comment</th>
+                  <th className="et-th et-th-latency">Latency</th>
                   <th className="et-th et-th-time">Timestamp</th>
                 </tr>
               </thead>
@@ -457,6 +477,18 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                   const isExpanded = expandedIdx === idx;
                   const hasSubRows =
                     row.subRows && row.subRows.length > 0;
+
+                  // Compute latency from previous row (only between Client Input and Client Output)
+                  let stepLatencyMs: number | null = null;
+                  if (idx > 0 && row.category !== "Client Input") {
+                    const prevRow = rows[idx - 1];
+                    const curMs = new Date(row.timestamp).getTime();
+                    const prevMs = new Date(prevRow.timestamp).getTime();
+                    const diff = curMs - prevMs;
+                    if (!isNaN(diff) && diff >= 0) {
+                      stepLatencyMs = diff;
+                    }
+                  }
 
                   return (
                     <>
@@ -479,6 +511,9 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                         </td>
                         <td className="et-td et-td-comment">
                           <div className="et-comment-text">{row.comment}</div>
+                        </td>
+                        <td className="et-td et-td-latency">
+                          {stepLatencyMs != null ? `${stepLatencyMs}ms` : ""}
                         </td>
                         <td className="et-td et-td-time">
                           {formatTimestamp(row.timestamp)}
@@ -510,6 +545,7 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                                     {sub.comment}
                                   </div>
                                 </td>
+                                <td className="et-td et-td-latency" />
                                 <td className="et-td et-td-time">
                                   {formatTimestamp(sub.timestamp)}
                                 </td>
@@ -521,7 +557,7 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                                 >
                                   <td
                                     className="et-td"
-                                    colSpan={3}
+                                    colSpan={4}
                                     style={{ paddingLeft: 40 }}
                                   >
                                     <div className="et-json-tree">
@@ -539,7 +575,7 @@ export function ExecutionTab({ pipelineEvents }: Props) {
                         })}
                       {row.dividerAfter && (
                         <tr className="et-spacer-row">
-                          <td colSpan={3} />
+                          <td colSpan={4} />
                         </tr>
                       )}
                     </>

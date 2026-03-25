@@ -91,10 +91,10 @@ public class EndTurnProcessor {
                 // ── Step 2: transform ThinkResponse → UserResponse ───────────
                 .mapValues((sessionId, response) -> {
                     UserResponse userResponse = toUserResponse(sessionId, response);
-                    log.info("[{}] End-turn → message-output  content_len={} cost=${}",
+                    log.info("[{}] End-turn → message-output  content_len={} cost={}",
                             sessionId,
                             userResponse.content().length(),
-                            String.format("%.6f", userResponse.cost()));
+                            userResponse.cost() != null ? String.format("$%.6f", userResponse.cost()) : "null");
                     return userResponse;
                 })
 

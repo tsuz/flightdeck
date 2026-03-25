@@ -40,12 +40,11 @@ import java.util.Map;
  *
  * <h3>Pricing model</h3>
  * The processor trusts the {@code cost} field already present on each
- * {@link ThinkResponse} (set by the upstream Think processor which has
- * access to the exact token pricing at call time).  This keeps pricing
- * logic in one place and makes the aggregator a pure accumulator.
- * A {@link #estimateCost} helper is also provided for cases where the
- * upstream cost field is zero or absent — it applies Sonnet 4 list pricing
- * as a safe fallback.
+ * {@link ThinkResponse} (set by the upstream Think consumer which has
+ * access to the exact token pricing via {@code INPUT_TOKEN_PRICE} and
+ * {@code OUTPUT_TOKEN_PRICE} environment variables at call time).
+ * This keeps pricing logic in one place and makes the aggregator
+ * a pure accumulator.
  *
  * <h3>Tombstone note</h3>
  * The diagram annotates <em>"Emit Tombstone when aggregated"</em>.
@@ -62,13 +61,6 @@ public class SessionCostAggregationProcessor {
     /** Name of the persistent RocksDB store backing the session-cost KTable. */
     public static final String SESSION_COST_STORE = "session-cost-store";
 
-    /**
-     * Fallback pricing constants (USD per million tokens) — Claude Sonnet 4 list price.
-     * Only applied when {@link ThinkResponse#cost()} is 0.
-     */
-    static final double INPUT_COST_PER_M_TOKENS  = 3.0;
-    static final double OUTPUT_COST_PER_M_TOKENS = 15.0;
-
     /** Sentinel cost value that signals a session-close / tombstone event. */
     static final double SESSION_CLOSE_SENTINEL = -1.0;
 
@@ -80,7 +72,7 @@ public class SessionCostAggregationProcessor {
         Map<String, KStream<String, ThinkResponse>> branches = thinkStream
                 .split(Named.as("split-"))
                 .branch(
-                        (sid, r) -> r != null && r.cost() == SESSION_CLOSE_SENTINEL,
+                        (sid, r) -> r != null && r.cost() != null && r.cost() == SESSION_CLOSE_SENTINEL,
                         Branched.as("close-signals")
                 )
                 .branch(
@@ -101,9 +93,15 @@ public class SessionCostAggregationProcessor {
 
                         // Aggregator
                         (sessionId, response, current) -> {
-                            double callCost = response.cost() > 0
-                                    ? response.cost()
-                                    : estimateCost(response.inputTokens(), response.outputTokens());
+                            // Accumulate cost: null + null = null, null + value = value, value + value = sum
+                            Double callCost = response.cost();
+                            Double totalCost;
+                            if (current.estimatedCostUsd() == null && callCost == null) {
+                                totalCost = null;
+                            } else {
+                                totalCost = (current.estimatedCostUsd() != null ? current.estimatedCostUsd() : 0.0)
+                                          + (callCost != null ? callCost : 0.0);
+                            }
 
                             SessionCost updated = new SessionCost(
                                     sessionId,
@@ -111,16 +109,17 @@ public class SessionCostAggregationProcessor {
                                     current.llmCalls()          + 1,
                                     current.totalInputTokens()  + response.inputTokens(),
                                     current.totalOutputTokens() + response.outputTokens(),
-                                    current.estimatedCostUsd()  + callCost,
+                                    totalCost,
                                     Instant.now().toString()
                             );
 
-                            log.info("[{}] Cost updated — calls={} input_tok={} output_tok={} total_usd=${}",
+                            log.info("[{}] Cost updated — calls={} input_tok={} output_tok={} total_usd={}",
                                     sessionId,
                                     updated.llmCalls(),
                                     updated.totalInputTokens(),
                                     updated.totalOutputTokens(),
-                                    String.format("%.6f", updated.estimatedCostUsd()));
+                                    updated.estimatedCostUsd() != null
+                                            ? String.format("$%.6f", updated.estimatedCostUsd()) : "null");
 
                             return updated;
                         },
@@ -135,9 +134,10 @@ public class SessionCostAggregationProcessor {
         // ── Publish running totals to session-cost topic ──────────────────────
         costTable
                 .toStream()
-                .peek((sid, cost) -> log.debug("[{}] → {} usd=${}",
+                .peek((sid, cost) -> log.debug("[{}] → {} usd={}",
                         sid, Topics.SESSION_COST,
-                        cost != null ? String.format("%.6f", cost.estimatedCostUsd()) : "null"))
+                        cost != null && cost.estimatedCostUsd() != null
+                                ? String.format("$%.6f", cost.estimatedCostUsd()) : "null"))
                 .to(Topics.SESSION_COST,
                         Produced.with(Serdes.String(), JsonSerde.of(SessionCost.class)));
 
@@ -155,15 +155,6 @@ public class SessionCostAggregationProcessor {
     // ─────────────────────────────────────────────────────────────────────────
     // Package-private helpers (also used by tests)
     // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Estimates USD cost from raw token counts using Sonnet 4 list pricing.
-     * Applied only when the upstream {@link ThinkResponse#cost()} field is zero.
-     */
-    static double estimateCost(int inputTokens, int outputTokens) {
-        return (inputTokens  / 1_000_000.0) * INPUT_COST_PER_M_TOKENS
-             + (outputTokens / 1_000_000.0) * OUTPUT_COST_PER_M_TOKENS;
-    }
 
     /**
      * Returns {@code incoming} if non-blank, otherwise preserves

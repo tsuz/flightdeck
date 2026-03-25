@@ -9,7 +9,7 @@ import java.util.List;
 public record ThinkResponse(
         @JsonProperty("session_id")    String sessionId,
         @JsonProperty("user_id")       String userId,
-        @JsonProperty("cost")          double cost,
+        @JsonProperty("cost")          Double cost,
         @JsonProperty("input_tokens")  int inputTokens,
         @JsonProperty("output_tokens") int outputTokens,
         @JsonProperty("messages")      List<MessageInput> messages,

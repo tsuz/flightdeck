@@ -102,7 +102,12 @@ class TestToClaudeMessages:
 
 
 class TestParseResponse:
-    def test_text_only_response(self):
+    @patch.dict("os.environ", {"INPUT_TOKEN_PRICE": "3", "OUTPUT_TOKEN_PRICE": "15"})
+    def test_text_only_response_with_pricing(self):
+        # Set class attrs with env vars (per million tokens)
+        ThinkConsumerRunner.INPUT_TOKEN_PRICE = 3.0
+        ThinkConsumerRunner.OUTPUT_TOKEN_PRICE = 15.0
+
         runner = make_runner()
         result = runner._parse_response(
             response={
@@ -118,9 +123,28 @@ class TestParseResponse:
         assert result["sessionId"] == "sess-1"
         assert result["userId"] == "user-1"
         assert result["endTurn"] is True
-        assert result["cost"] == 18.0  # $3 input + $15 output
+        assert result["cost"] == pytest.approx(18.0)  # $3 input + $15 output
         assert result["inputTokens"] == 1_000_000
         assert result["outputTokens"] == 1_000_000
+
+        # Reset class attrs
+        ThinkConsumerRunner.INPUT_TOKEN_PRICE = None
+        ThinkConsumerRunner.OUTPUT_TOKEN_PRICE = None
+
+    def test_text_only_response_without_pricing(self):
+        runner = make_runner()
+        result = runner._parse_response(
+            response={
+                "content": [{"type": "text", "text": "Your order is shipped."}],
+                "usage": {"input_tokens": 1_000_000, "output_tokens": 1_000_000},
+                "stop_reason": "end_turn",
+            },
+            session_id="sess-1",
+            user_id="user-1",
+            latest_input={"content": "check order"},
+        )
+
+        assert result["cost"] is None  # No pricing env vars set
         assert len(result["toolUses"]) == 0
         # messages[0] = latest_input, messages[1] = assistant text
         assert result["messages"][0] == {"content": "check order"}

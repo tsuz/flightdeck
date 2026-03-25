@@ -185,10 +185,15 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
 
         const inputTokens = v?.input_tokens != null ? Number(v.input_tokens) : null;
         const outputTokens = v?.output_tokens != null ? Number(v.output_tokens) : null;
+        const costValue = v?.cost != null ? Number(v.cost) : null;
         if (inputTokens != null || outputTokens != null) {
           const parts: string[] = [];
           if (inputTokens != null) parts.push(`in: ${inputTokens}`);
           if (outputTokens != null) parts.push(`out: ${outputTokens}`);
+          if (costValue != null) {
+            const costStr = costValue < 0.01 ? `$${costValue.toFixed(6)}` : `$${costValue.toFixed(4)}`;
+            parts.push(costStr);
+          }
           comment += ` (${parts.join(", ")})`;
         }
 

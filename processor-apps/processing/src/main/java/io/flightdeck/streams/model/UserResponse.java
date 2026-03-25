@@ -19,7 +19,7 @@ public record UserResponse(
         @JsonProperty("llm_calls")    int llmCalls,
         @JsonProperty("input_tokens") int inputTokens,
         @JsonProperty("output_tokens") int outputTokens,
-        @JsonProperty("cost")         double cost,
+        @JsonProperty("cost")         Double cost,
         @JsonProperty("source_agent") String sourceAgent,  // which agent produced this
         @JsonProperty("timestamp")    String timestamp
 ) {}

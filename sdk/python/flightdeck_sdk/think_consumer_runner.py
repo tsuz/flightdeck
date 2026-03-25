@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import signal
 import time
 import urllib.request
@@ -43,9 +44,17 @@ class ThinkConsumerConfig:
 
 
 class ThinkConsumerRunner:
-    # Pricing per million tokens
-    INPUT_COST_PER_M = 3.0
-    OUTPUT_COST_PER_M = 15.0
+    # Token pricing from environment variables (per-token, not per-million)
+    _input_price_str = os.environ.get("INPUT_TOKEN_PRICE")
+    _output_price_str = os.environ.get("OUTPUT_TOKEN_PRICE")
+
+    if _input_price_str and _output_price_str:
+        INPUT_TOKEN_PRICE: Optional[float] = float(_input_price_str)
+        OUTPUT_TOKEN_PRICE: Optional[float] = float(_output_price_str)
+    else:
+        logger.warning("INPUT_TOKEN_PRICE and/or OUTPUT_TOKEN_PRICE not set — cost will not be calculated")
+        INPUT_TOKEN_PRICE = None
+        OUTPUT_TOKEN_PRICE = None
 
     def __init__(self, config: ThinkConsumerConfig):
         self._config = config
@@ -230,8 +239,9 @@ class ThinkConsumerRunner:
         usage = response.get("usage", {})
         input_tokens = usage.get("input_tokens", 0)
         output_tokens = usage.get("output_tokens", 0)
-        cost = (input_tokens * self.INPUT_COST_PER_M / 1_000_000) + \
-               (output_tokens * self.OUTPUT_COST_PER_M / 1_000_000)
+        cost = (input_tokens / 1_000_000 * self.INPUT_TOKEN_PRICE + output_tokens / 1_000_000 * self.OUTPUT_TOKEN_PRICE) \
+               if self.INPUT_TOKEN_PRICE is not None and self.OUTPUT_TOKEN_PRICE is not None \
+               else None
 
         stop_reason = response.get("stop_reason", "end_turn")
         end_turn = stop_reason != "tool_use"
@@ -284,7 +294,7 @@ class ThinkConsumerRunner:
         return {
             "sessionId": session_id,
             "userId": user_id,
-            "cost": round(cost, 6),
+            "cost": round(cost, 6) if cost is not None else None,
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
             "messages": messages,

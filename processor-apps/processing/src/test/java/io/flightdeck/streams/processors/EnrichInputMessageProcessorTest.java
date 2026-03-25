@@ -219,7 +219,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrich(): context with null history is treated as empty")
     void enrich_contextWithNullHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
-        SessionContext ctx = new SessionContext("s", "u", 0, 0, List.of(), null, TS);
+        SessionContext ctx = new SessionContext("s", "u", 0.0, 0, List.of(), null, TS);
         FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, ctx);
         assertThat(result.history()).isEmpty();
     }

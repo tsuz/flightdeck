@@ -232,7 +232,7 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("toUserResponse: empty content when ThinkResponse has no messages")
     void toUserResponse_noMessages_emptyContent() {
-        ThinkResponse resp = new ThinkResponse("s", "u", 0, 0, 0,
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, 0, 0,
                 List.of(), List.of(), true, TS);
 
         UserResponse result = toUserResponse("s", resp);

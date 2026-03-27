@@ -8,6 +8,8 @@ import io.flightdeck.think.model.FullSessionContext;
 import io.flightdeck.think.model.MessageInput;
 import io.flightdeck.think.model.ThinkResponse;
 import io.flightdeck.think.service.ClaudeApiService;
+import io.flightdeck.think.service.GeminiApiService;
+import io.flightdeck.think.service.LlmApiService;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -74,7 +76,7 @@ public class ThinkConsumer implements AutoCloseable {
     private final KafkaConsumer<String, String> consumer;
     private final KafkaProducer<String, String> producer;
     private final ObjectMapper mapper;
-    private final ClaudeApiService claudeApiService;
+    private final LlmApiService llmApiService;
     private volatile boolean running = true;
 
     public ThinkConsumer() {
@@ -84,7 +86,29 @@ public class ThinkConsumer implements AutoCloseable {
 
         this.consumer = createConsumer();
         this.producer = createProducer();
-        this.claudeApiService = new ClaudeApiService(mapper);
+        this.llmApiService = createLlmService(mapper);
+    }
+
+    private static LlmApiService createLlmService(ObjectMapper mapper) {
+        String provider = AppConfig.LLM_PROVIDER.toLowerCase();
+        return switch (provider) {
+            case "gemini" -> {
+                if (AppConfig.GEMINI_API_KEY.isBlank()) {
+                    throw new IllegalStateException(
+                            "GEMINI_API_KEY is required when LLM_PROVIDER=gemini");
+                }
+                log.info("Using Gemini LLM provider (model={})", AppConfig.GEMINI_MODEL);
+                yield new GeminiApiService(mapper);
+            }
+            default -> {
+                if (AppConfig.CLAUDE_API_KEY.isBlank()) {
+                    throw new IllegalStateException(
+                            "CLAUDE_API_KEY is required when LLM_PROVIDER=claude");
+                }
+                log.info("Using Claude LLM provider (model={})", AppConfig.CLAUDE_MODEL);
+                yield new ClaudeApiService(mapper);
+            }
+        };
     }
 
     /**
@@ -175,12 +199,12 @@ public class ThinkConsumer implements AutoCloseable {
         // 3. Build system prompt with memoir context
         String systemPrompt = buildSystemPrompt(context.memoirContext());
 
-        // 4. Convert history + latest input to Claude message format
-        List<Map<String, Object>> claudeMessages = ClaudeApiService.toClaudeMessages(
+        // 4. Convert history + latest input to LLM provider message format
+        List<Map<String, Object>> llmMessages = llmApiService.toApiMessages(
                 context.history(), context.latestInput());
 
-        // 5. Call Claude API
-        ThinkResponse thinkResponse = claudeApiService.call(systemPrompt, claudeMessages, sessionId, userId);
+        // 5. Call LLM API
+        ThinkResponse thinkResponse = llmApiService.call(systemPrompt, llmMessages, sessionId, userId);
 
         // 6. Attach prevSessionCost from the enriched context
         Double prevSessionCost = context.cost();

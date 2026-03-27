@@ -9,7 +9,7 @@ Fault tolerant, event driven, extensible AI Agent framework
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
-- An [Anthropic API key](https://console.anthropic.com/)
+- An [Anthropic API key](https://console.anthropic.com/) or a [Google Gemini API key](https://aistudio.google.com/apikey)
 
 ### Run
 
@@ -49,7 +49,7 @@ https://tsuz.github.io/flightdeck-docs/
 |--------|-------------|
 | `api/` | Chat API — REST endpoint and WebSocket server that accepts user messages and produces to Kafka |
 | `processor-apps/` | Kafka Streams app — enriches messages with session history, aggregates tool results, and routes the pipeline |
-| `think/` | Think consumer — calls the Claude API with tool definitions, produces LLM responses |
+| `think/` | Think consumer — calls the LLM API (Claude or Gemini) with tool definitions, produces LLM responses |
 | `tools/` | Tool execution consumer — executes tool invocations (e.g. external APIs) dispatched by the LLM |
 | `memoir/` | Memoir consumer — generates long-term session summaries using Claude |
 | `monitoring/` | Logging consumer — tails all Kafka topics for observability |
@@ -65,9 +65,13 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | `AGENT_NAME` | *(required)* | Unique name for the AI agent instance. |
 | `SYSTEM_PROMPT_FILE` | *(optional)* | Path to a text file containing the system prompt. If not set, a default generic prompt is used. If set but file not found, startup fails. |
 | `TOOLS_JSON_FILE` | *(optional)* | Path to a JSON file defining the tools available to the agent. If not set, the agent runs without tools. If set but file not found, startup fails. See [`prompts/tools.json`](prompts/tools.json) for an example. |
-| `CLAUDE_API_KEY` | *(required)* | Your Anthropic API key |
+| `LLM_PROVIDER` | `claude` | LLM provider to use — `claude` or `gemini` |
+| `CLAUDE_API_KEY` | *(required for Claude)* | Your Anthropic API key |
 | `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model to use |
 | `CLAUDE_MAX_TOKENS` | `8096` | Max tokens per Claude response |
+| `GEMINI_API_KEY` | *(required for Gemini)* | Your Google Gemini API key |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
+| `GEMINI_MAX_TOKENS` | `4096` | Max tokens per Gemini response |
 | `MEMOIR_ENABLED` | `true` | Enable per-user long-term memory across sessions. Set to `false` to disable. |
 | `MEMOIR_SESSION_INACTIVITY_THRESHOLD_SECONDS` | `20` | Seconds of inactivity before a session ends and memoir is saved. Only applies when `MEMOIR_ENABLED=true`. |
 | `MEMOIR_SESSION_PUNCTUATE_INTERVAL_SECONDS` | `5` | How often (in seconds) to check for inactive sessions. Only applies when `MEMOIR_ENABLED=true`. |

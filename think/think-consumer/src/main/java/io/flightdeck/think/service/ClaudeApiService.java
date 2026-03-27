@@ -20,7 +20,7 @@ import java.util.*;
 /**
  * Calls the Claude Messages API and translates the response into a {@link ThinkResponse}.
  */
-public class ClaudeApiService {
+public class ClaudeApiService implements LlmApiService {
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeApiService.class);
 
@@ -245,6 +245,11 @@ public class ClaudeApiService {
      * Converts internal MessageInput history into Claude API message format.
      * Groups consecutive same-role messages and handles tool-result messages.
      */
+    @Override
+    public List<Map<String, Object>> toApiMessages(List<MessageInput> history, MessageInput latestInput) {
+        return toClaudeMessages(history, latestInput);
+    }
+
     public static List<Map<String, Object>> toClaudeMessages(List<MessageInput> history, MessageInput latestInput) {
         List<Map<String, Object>> messages = new ArrayList<>();
 

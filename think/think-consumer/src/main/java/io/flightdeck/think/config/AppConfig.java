@@ -23,6 +23,10 @@ public final class AppConfig {
     public static final String OUTPUT_TOPIC =
             env("KAFKA_OUTPUT_TOPIC", AGENT_NAME + "-think-request-response");
 
+    // ── LLM Provider ────────────────────────────────────────────────────────
+    public static final String LLM_PROVIDER =
+            env("LLM_PROVIDER", "claude");
+
     // ── Claude API ──────────────────────────────────────────────────────────
     public static final String CLAUDE_API_KEY =
             env("CLAUDE_API_KEY", "");
@@ -35,6 +39,19 @@ public final class AppConfig {
 
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
+
+    // ── Gemini API ──────────────────────────────────────────────────────────
+    public static final String GEMINI_API_KEY =
+            env("GEMINI_API_KEY", "");
+
+    public static final String GEMINI_API_URL =
+            env("GEMINI_API_URL", "https://generativelanguage.googleapis.com/v1beta");
+
+    public static final String GEMINI_MODEL =
+            env("GEMINI_MODEL", "gemini-2.5-flash");
+
+    public static final int GEMINI_MAX_TOKENS =
+            Integer.parseInt(env("GEMINI_MAX_TOKENS", "4096"));
 
     // ── System prompt ──────────────────────────────────────────────────────
     public static final String SYSTEM_PROMPT_FILE = env("SYSTEM_PROMPT_FILE", "");

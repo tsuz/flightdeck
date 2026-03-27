@@ -25,6 +25,11 @@ class ThinkConsumerConfig:
     claude_api_url: str = "https://api.anthropic.com/v1/messages"
     poll_timeout_s: float = 1.0
     system_prompt_builder: Optional[Callable[[str, dict], str]] = None
+    llm_provider: str = "claude"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_max_tokens: int = 4096
+    gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     @property
     def group_id(self) -> str:
@@ -59,6 +64,12 @@ class ThinkConsumerRunner:
     def __init__(self, config: ThinkConsumerConfig):
         self._config = config
         self._running = False
+
+        provider = config.llm_provider.lower()
+        if provider == "gemini":
+            logger.info("Using Gemini LLM provider (model=%s)", config.gemini_model)
+        else:
+            logger.info("Using Claude LLM provider (model=%s)", config.claude_model)
 
         self._consumer = Consumer({
             "bootstrap.servers": config.brokers,
@@ -159,14 +170,16 @@ class ThinkConsumerRunner:
         # Build system prompt
         system_prompt = self._build_system_prompt(memoir_context, context)
 
-        # Convert messages to Claude API format
-        messages = self._to_claude_messages(history, latest_input)
+        provider = self._config.llm_provider.lower()
 
-        # Call Claude API
-        response = self._call_claude(system_prompt, messages)
-
-        # Parse response into ThinkResponse and attach prevSessionCost
-        think_response = self._parse_response(response, session_id, user_id, latest_input)
+        if provider == "gemini":
+            messages = self._to_gemini_messages(history, latest_input)
+            response = self._call_gemini(system_prompt, messages)
+            think_response = self._parse_gemini_response(response, session_id, user_id, latest_input, history)
+        else:
+            messages = self._to_claude_messages(history, latest_input)
+            response = self._call_claude(system_prompt, messages)
+            think_response = self._parse_response(response, session_id, user_id, latest_input)
         think_response["prevSessionCost"] = cumulative_cost
 
         # Produce to output topic
@@ -342,6 +355,208 @@ class ThinkConsumerRunner:
             "toolUses": tool_uses,
             "endTurn": end_turn,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+
+    # ── Gemini helpers ────────────────────────────────────────────────────
+
+    def _to_gemini_messages(self, history: list[dict], latest_input: dict) -> list[dict]:
+        """Convert internal history to Gemini API contents format."""
+        # Build tool_use_id → name mapping from assistant messages
+        tool_id_to_name: dict[str, str] = {}
+        for msg in history:
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), list):
+                for block in msg["content"]:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        tid = block.get("id", "")
+                        tname = block.get("name", "")
+                        if tid and tname:
+                            tool_id_to_name[tid] = tname
+
+        contents: list[dict] = []
+
+        for msg in history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "tool":
+                # Convert tool results to functionResponse parts
+                parts = self._build_function_response_parts(content, tool_id_to_name)
+                if parts:
+                    contents.append({"role": "user", "parts": parts})
+            elif role == "assistant":
+                if isinstance(content, list):
+                    # Structured content blocks — convert tool_use to functionCall
+                    parts = []
+                    for block in content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                text = block.get("text", "")
+                                if text:
+                                    parts.append({"text": text})
+                            elif block.get("type") == "tool_use":
+                                parts.append({"functionCall": {
+                                    "name": block.get("name", ""),
+                                    "args": block.get("input", {}),
+                                }})
+                    if parts:
+                        contents.append({"role": "model", "parts": parts})
+                else:
+                    self._append_or_merge_gemini(contents, "model", str(content))
+            else:
+                self._append_or_merge_gemini(contents, "user", str(content))
+
+        # Add latest input
+        if latest_input:
+            content = latest_input.get("content", "")
+            self._append_or_merge_gemini(contents, "user", str(content))
+
+        return contents
+
+    def _append_or_merge_gemini(self, contents: list[dict], role: str, text: str) -> None:
+        """Merge consecutive same-role text messages for Gemini."""
+        if contents and contents[-1]["role"] == role:
+            last_parts = contents[-1].get("parts", [])
+            if last_parts and "text" in last_parts[-1]:
+                last_parts.append({"text": text})
+                return
+        contents.append({"role": role, "parts": [{"text": text}]})
+
+    def _build_function_response_parts(self, content: Any, tool_id_to_name: dict[str, str]) -> list[dict]:
+        """Convert tool results to Gemini functionResponse parts."""
+        parts: list[dict] = []
+        results = content if isinstance(content, list) else [content]
+        for result in results:
+            if isinstance(result, dict) and "tool_use_id" in result:
+                name = tool_id_to_name.get(result["tool_use_id"], "unknown")
+                res_data = result.get("result", result.get("content", "{}"))
+                if isinstance(res_data, str):
+                    try:
+                        res_data = json.loads(res_data)
+                    except (json.JSONDecodeError, TypeError):
+                        res_data = {"result": res_data}
+                parts.append({"functionResponse": {"name": name, "response": res_data}})
+        return parts
+
+    def _call_gemini(self, system_prompt: str, contents: list[dict]) -> dict:
+        body: dict[str, Any] = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": self._config.gemini_max_tokens},
+        }
+
+        if self._config.tools:
+            func_decls = []
+            for tool in self._config.tools:
+                decl: dict[str, Any] = {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                }
+                if "input_schema" in tool:
+                    decl["parameters"] = tool["input_schema"]
+                func_decls.append(decl)
+            body["tools"] = [{"function_declarations": func_decls}]
+
+        data = json.dumps(body).encode()
+        url = f"{self._config.gemini_api_url}/models/{self._config.gemini_model}:generateContent?key={self._config.gemini_api_key}"
+
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else ""
+            logger.error("Gemini API error %d: %s", e.code, error_body)
+            raise RuntimeError(f"Gemini API error {e.code}: {error_body}") from e
+
+    def _parse_gemini_response(self, response: dict, session_id: str, user_id: str,
+                               latest_input: dict, history: list[dict]) -> dict:
+        import uuid
+
+        usage = response.get("usageMetadata", {})
+        input_tokens = usage.get("promptTokenCount", 0)
+        output_tokens = usage.get("candidatesTokenCount", 0)
+        cost = (input_tokens / 1_000_000 * self.INPUT_TOKEN_PRICE + output_tokens / 1_000_000 * self.OUTPUT_TOKEN_PRICE) \
+               if self.INPUT_TOKEN_PRICE is not None and self.OUTPUT_TOKEN_PRICE is not None \
+               else None
+
+        candidates = response.get("candidates", [])
+        if not candidates:
+            raise RuntimeError("No candidates in Gemini response")
+
+        candidate = candidates[0]
+        parts = candidate.get("content", {}).get("parts", [])
+
+        has_function_call = any("functionCall" in p for p in parts)
+        end_turn = not has_function_call
+
+        messages: list[dict] = []
+        tool_uses: list[dict] = []
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        # Prepend latest input
+        if latest_input:
+            messages.append(latest_input)
+
+        # Build content blocks in Claude-compatible format for history preservation
+        content_blocks: list[dict] = []
+
+        for part in parts:
+            if "text" in part:
+                content_blocks.append({"type": "text", "text": part["text"]})
+            elif "functionCall" in part:
+                fc = part["functionCall"]
+                tool_use_id = "toolu_" + uuid.uuid4().hex[:20]
+                content_blocks.append({
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": fc.get("name", ""),
+                    "input": fc.get("args", {}),
+                })
+                tool_uses.append({
+                    "toolUseId": tool_use_id,
+                    "toolId": fc.get("name", ""),
+                    "name": fc.get("name", ""),
+                    "input": fc.get("args", {}),
+                    "sessionId": session_id,
+                    "totalTools": sum(1 for p in parts if "functionCall" in p),
+                    "timestamp": now,
+                })
+
+        if has_function_call:
+            messages.append({
+                "sessionId": session_id,
+                "userId": user_id,
+                "role": "assistant",
+                "content": content_blocks,
+                "timestamp": now,
+            })
+        else:
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    messages.append({
+                        "sessionId": session_id,
+                        "userId": user_id,
+                        "role": "assistant",
+                        "content": block.get("text", ""),
+                        "timestamp": now,
+                    })
+
+        return {
+            "sessionId": session_id,
+            "userId": user_id,
+            "cost": round(cost, 6) if cost is not None else None,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "messages": messages,
+            "toolUses": tool_uses,
+            "endTurn": end_turn,
+            "timestamp": now,
         }
 
     def _send_to_dlq(self, key: str | None, value: str | None, reason: str, topic: str, partition: int, offset: int) -> None:

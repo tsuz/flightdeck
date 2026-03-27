@@ -128,6 +128,7 @@ public class ThinkConsumer implements AutoCloseable {
                 } catch (Exception e) {
                     log.error("[{}] Failed to process record at offset {}: {}",
                             record.key(), record.offset(), e.getMessage(), e);
+                    emitErrorResponse(record, e);
                 }
             }
 
@@ -274,6 +275,47 @@ public class ThinkConsumer implements AutoCloseable {
         }
 
         return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());
+    }
+
+    /**
+     * Emits an error response to the output topic so the user sees the failure.
+     */
+    private void emitErrorResponse(ConsumerRecord<String, String> record, Exception e) {
+        try {
+            String sessionId = record.key() != null ? record.key() : "unknown";
+            String userId = "";
+
+            // Try to extract userId from the payload
+            try {
+                FullSessionContext ctx = mapper.readValue(record.value(), FullSessionContext.class);
+                if (ctx.userId() != null) userId = ctx.userId();
+            } catch (Exception ignored) {}
+
+            String errorMessage = "Sorry, an error occurred while processing your request: " + e.getMessage();
+
+            ThinkResponse errorResponse = new ThinkResponse(
+                    sessionId,
+                    userId,
+                    null,
+                    null,
+                    0,
+                    0,
+                    List.of(new MessageInput(
+                            sessionId, userId, "assistant", errorMessage,
+                            java.time.Instant.now().toString(), null
+                    )),
+                    null,
+                    true,
+                    java.time.Instant.now().toString()
+            );
+
+            String outputJson = mapper.writeValueAsString(errorResponse);
+            producer.send(new ProducerRecord<>(AppConfig.OUTPUT_TOPIC, sessionId, outputJson));
+            producer.flush();
+            log.info("[{}] Emitted error response to {}", sessionId, AppConfig.OUTPUT_TOPIC);
+        } catch (Exception ex) {
+            log.error("Failed to emit error response: {}", ex.getMessage(), ex);
+        }
     }
 
     public void shutdown() {

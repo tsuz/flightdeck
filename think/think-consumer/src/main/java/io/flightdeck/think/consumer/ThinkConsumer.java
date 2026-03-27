@@ -93,10 +93,18 @@ public class ThinkConsumer implements AutoCloseable {
         String provider = AppConfig.LLM_PROVIDER.toLowerCase();
         return switch (provider) {
             case "gemini" -> {
+                if (AppConfig.GEMINI_API_KEY.isBlank()) {
+                    throw new IllegalStateException(
+                            "GEMINI_API_KEY is required when LLM_PROVIDER=gemini");
+                }
                 log.info("Using Gemini LLM provider (model={})", AppConfig.GEMINI_MODEL);
                 yield new GeminiApiService(mapper);
             }
             default -> {
+                if (AppConfig.CLAUDE_API_KEY.isBlank()) {
+                    throw new IllegalStateException(
+                            "CLAUDE_API_KEY is required when LLM_PROVIDER=claude");
+                }
                 log.info("Using Claude LLM provider (model={})", AppConfig.CLAUDE_MODEL);
                 yield new ClaudeApiService(mapper);
             }

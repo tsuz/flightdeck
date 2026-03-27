@@ -67,8 +67,12 @@ class ThinkConsumerRunner:
 
         provider = config.llm_provider.lower()
         if provider == "gemini":
+            if not config.gemini_api_key:
+                raise ValueError("gemini_api_key is required when llm_provider='gemini'")
             logger.info("Using Gemini LLM provider (model=%s)", config.gemini_model)
         else:
+            if not config.claude_api_key:
+                raise ValueError("claude_api_key is required when llm_provider='claude'")
             logger.info("Using Claude LLM provider (model=%s)", config.claude_model)
 
         self._consumer = Consumer({

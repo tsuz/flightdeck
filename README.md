@@ -4,6 +4,12 @@ Fault tolerant, event driven, extensible AI Agent framework
 
 ![FlightDeck](assets/img/ui-execution.png)
 
+
+
+## 📘 Docs
+
+[Documentation](https://tsuz.github.io/flightdeck-docs/)
+
 ## Getting Started
 
 ### Prerequisites
@@ -16,9 +22,9 @@ Fault tolerant, event driven, extensible AI Agent framework
 ```bash
 # 1. Clone the repo
 git clone https://github.com/tsuz/ai-agent-orchestration-kafka-example.git
-cd ai-agent-orchestration-kafka-example
+cd ai-agent-orchestration-kafka-example/examples/lead-followup-agent
 
-# 2. Create your .env file
+# 2. Add Claude API key to your .env file
 cp .env.example .env
 # Edit .env and add your CLAUDE_API_KEY
 
@@ -28,10 +34,6 @@ docker compose up --build
 
 Once everything is up, open [http://localhost](http://localhost) in your browser.
 
-
-### Docs
-
-https://tsuz.github.io/flightdeck-docs/
 
 ### Services
 

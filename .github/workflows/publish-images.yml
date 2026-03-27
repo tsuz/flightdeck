@@ -3,12 +3,6 @@ name: Publish Docker Images
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build only, don't push"
-        type: boolean
-        default: true
 
 env:
   REGISTRY: ghcr.io
@@ -44,31 +38,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
+      - name: Extract version from tag
         id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-            echo "is_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=test-${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set push flag
-        id: flags
-        run: |
-          if [[ "${{ steps.version.outputs.is_release }}" == "true" && "${{ github.event.inputs.dry_run }}" != "true" ]]; then
-            echo "push=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "push=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service.context }}
-          push: ${{ steps.flags.outputs.push }}
-          load: ${{ steps.flags.outputs.push == 'false' }}
+          push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:${{ steps.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:latest

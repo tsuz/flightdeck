@@ -1,6 +1,6 @@
 # FlightDeck
 
-Fault tolerant, event driven, extensible AI Agent framework
+Fault tolerant, event driven, state managed AI Agent framework
 
 ![FlightDeck](assets/img/ui-execution.png)
 
@@ -8,7 +8,8 @@ Fault tolerant, event driven, extensible AI Agent framework
 
 ## 📘 Docs
 
-[Documentation](https://tsuz.github.io/flightdeck-docs/)
+- [Documentation](https://tsuz.github.io/flightdeck-docs/)
+- [Examples](https://github.com/tsuz/flightdeck/tree/main/examples)
 
 ## Getting Started
 

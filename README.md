@@ -1,15 +1,33 @@
 # FlightDeck
 
-Fault tolerant, event driven, state managed AI Agent framework
+AI Agent framework that manages state, session context, and takes care of the infrastructure.
 
 ![FlightDeck](assets/img/ui-execution.png)
-
 
 
 ## 📘 Docs
 
 - [Documentation](https://tsuz.github.io/flightdeck-docs/)
 - [Examples](https://github.com/tsuz/flightdeck/tree/main/examples)
+
+## 🦄 Features
+
+- Maintain session's context
+- Language Agnostic
+- Cost tracking and budget limiting
+- Dashboard to track execution, decisions, and latency
+- High performance using stream processing
+- Scalable and fault tolerant (message replay)
+
+#### Coming Soon.
+
+- User specific settings like sensitive API keys and user preference.
+- History compaction
+- Cancellation
+- Dynamic prompt updates
+- Error handling for APIs
+- Multi-modal
+- Live progress update to users
 
 ## Getting Started
 

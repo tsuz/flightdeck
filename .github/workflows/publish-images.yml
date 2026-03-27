@@ -24,15 +24,15 @@ jobs:
       matrix:
         service:
           - name: chat-api
-            dockerfile: api/chat-api/Dockerfile
+            context: api/chat-api
           - name: processing
-            dockerfile: processor-apps/processing/Dockerfile
+            context: processor-apps/processing
           - name: think-consumer
-            dockerfile: think/think-consumer/Dockerfile
+            context: think/think-consumer
           - name: logging-consumer
-            dockerfile: monitoring/logging-consumer/Dockerfile
+            context: monitoring/logging-consumer
           - name: frontend
-            dockerfile: frontend/Dockerfile
+            context: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -55,12 +55,20 @@ jobs:
             echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Set push flag
+        id: flags
+        run: |
+          if [[ "${{ steps.version.outputs.is_release }}" == "true" && "${{ github.event.inputs.dry_run }}" != "true" ]]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ${{ matrix.service.dockerfile }}
-          push: ${{ steps.version.outputs.is_release == 'true' && (github.event.inputs.dry_run != 'true') }}
-          load: ${{ steps.version.outputs.is_release != 'true' || github.event.inputs.dry_run == 'true' }}
+          context: ${{ matrix.service.context }}
+          push: ${{ steps.flags.outputs.push }}
+          load: ${{ steps.flags.outputs.push == 'false' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:${{ steps.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}:latest

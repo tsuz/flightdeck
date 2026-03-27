@@ -72,7 +72,7 @@ services:
   # ─── Application Services ───────────────────────────────────────────────────
 
   api:
-    build: ../../api/chat-api
+    image: ghcr.io/tsuz/flightdeck/chat-api:${FLIGHTDECK_VERSION:-latest}
     ports:
       - "8000:8000"
       - "8001:8001"
@@ -86,7 +86,7 @@ services:
         condition: service_healthy
 
   processing:
-    build: ../../processor-apps/processing
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       AGENT_NAME: ${AGENT_NAME:-system-ops}
@@ -96,7 +96,7 @@ services:
         condition: service_healthy
 
   think-consumer:
-    build: ../../think/think-consumer
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
     volumes:
       - ./tools.json:/app/tools.json:ro
       - ./system-prompt.txt:/app/system-prompt.txt:ro
@@ -135,7 +135,7 @@ services:
         condition: service_started
 
   monitoring:
-    build: ../../monitoring/logging-consumer
+    image: ghcr.io/tsuz/flightdeck/logging-consumer:${FLIGHTDECK_VERSION:-latest}
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       AGENT_NAME: ${AGENT_NAME:-system-ops}
@@ -146,7 +146,7 @@ services:
   # ─── Frontend ────────────────────────────────────────────────────────────────
 
   frontend:
-    build: ../../frontend
+    image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
     ports:
       - "80:80"
     depends_on:

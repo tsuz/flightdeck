@@ -106,6 +106,68 @@ class AccumulateSessionContextProcessorTest {
         assertThat(ctxB.history()).hasSize(1);
     }
 
+    // ── Compaction ─────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("ThinkResponse with compactedHistory replaces accumulated history")
+    void compactedHistory_replacesState() {
+        // Simulate 3 turns of normal history accumulation
+        thinkInput.pipeInput("sess-c", thinkResp("sess-c", "u", 0.01, List.of(
+                userMsg("sess-c", "u", "turn1"),
+                assistantMsg("sess-c", "u", "resp1"))));
+        thinkInput.pipeInput("sess-c", thinkResp("sess-c", "u", 0.01, List.of(
+                userMsg("sess-c", "u", "turn2"),
+                assistantMsg("sess-c", "u", "resp2"))));
+        thinkInput.pipeInput("sess-c", thinkResp("sess-c", "u", 0.01, List.of(
+                userMsg("sess-c", "u", "turn3"),
+                assistantMsg("sess-c", "u", "resp3"))));
+
+        // Verify history has grown to 6 messages
+        List<TestRecord<String, SessionContext>> records = contextOutput.readRecordsToList();
+        SessionContext beforeCompaction = records.get(records.size() - 1).value();
+        assertThat(beforeCompaction.history()).hasSize(6);
+
+        // Now send a response with compactedHistory — simulates compaction in ThinkConsumer
+        List<MessageInput> compacted = List.of(
+                assistantMsg("sess-c", "u", "[Conversation Summary]\nUser asked 3 questions."),
+                userMsg("sess-c", "u", "turn3"),
+                assistantMsg("sess-c", "u", "resp3"));
+
+        ThinkResponse compactedResponse = new ThinkResponse(
+                "sess-c", "u", 0.01, null, 100, 50,
+                List.of(userMsg("sess-c", "u", "turn4"),
+                        assistantMsg("sess-c", "u", "resp4")),
+                List.of(), true, TS, compacted);
+
+        thinkInput.pipeInput("sess-c", compactedResponse);
+
+        // Read the latest context
+        SessionContext afterCompaction = contextOutput.readRecord().value();
+
+        // History should be: compacted (3) + new messages (2) = 5, NOT old (6) + new (2) = 8
+        assertThat(afterCompaction.history()).hasSize(5);
+        assertThat(afterCompaction.history().get(0).content())
+                .isEqualTo("[Conversation Summary]\nUser asked 3 questions.");
+        assertThat(afterCompaction.history().get(3).content()).isEqualTo("turn4");
+        assertThat(afterCompaction.history().get(4).content()).isEqualTo("resp4");
+        assertThat(afterCompaction.llmCalls()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("ThinkResponse with null compactedHistory uses normal append behavior")
+    void nullCompactedHistory_normalAppend() {
+        thinkInput.pipeInput("sess-n", thinkResp("sess-n", "u", 0.01, List.of(
+                assistantMsg("sess-n", "u", "first"))));
+        thinkInput.pipeInput("sess-n", thinkResp("sess-n", "u", 0.01, List.of(
+                assistantMsg("sess-n", "u", "second"))));
+
+        List<TestRecord<String, SessionContext>> records = contextOutput.readRecordsToList();
+        SessionContext ctx = records.get(1).value();
+        assertThat(ctx.history()).hasSize(2);
+        assertThat(ctx.history()).extracting(MessageInput::content)
+                .containsExactly("first", "second");
+    }
+
     // ── Helper unit tests ─────────────────────────────────────────────────────
 
     @Test
@@ -145,7 +207,7 @@ class AccumulateSessionContextProcessorTest {
 
     private static ThinkResponse thinkResp(String sid, String uid, double cost,
                                            List<MessageInput> msgs) {
-        return new ThinkResponse(sid, uid, cost, null, 100, 50, msgs, List.of(), true, TS);
+        return new ThinkResponse(sid, uid, cost, null, 100, 50, msgs, List.of(), true, TS, null);
     }
 
     private static MessageInput userMsg(String sid, String uid, String content) {

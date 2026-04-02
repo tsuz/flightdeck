@@ -242,7 +242,8 @@ public class GeminiApiService implements LlmApiService {
                     responseMessages,
                     toolUses.isEmpty() ? null : toolUses,
                     endTurn,
-                    Instant.now().toString()
+                    Instant.now().toString(),
+                    null    // compactedHistory — set by ThinkConsumer when compaction triggers
             );
 
         } catch (Exception e) {

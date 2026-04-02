@@ -16,5 +16,6 @@ public record ThinkResponse(
         @JsonProperty("messages")      List<MessageInput> messages,
         @JsonProperty("tool_uses")     List<ToolUseItem> toolUses,
         @JsonProperty("end_turn")      boolean endTurn,
-        @JsonProperty("timestamp")     String timestamp
+        @JsonProperty("timestamp")     String timestamp,
+        @JsonProperty("compacted_history") List<MessageInput> compactedHistory
 ) {}

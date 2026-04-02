@@ -30,6 +30,12 @@ class ThinkConsumerConfig:
     gemini_model: str = "gemini-2.5-flash"
     gemini_max_tokens: int = 4096
     gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    compaction_user_message_threshold: int = -1
+    compaction_prompt: str = (
+        "Summarize the following conversation concisely. "
+        "Preserve key facts, decisions, user preferences, and any context needed "
+        "to continue the conversation naturally. Output only the summary."
+    )
 
     @property
     def group_id(self) -> str:
@@ -114,6 +120,7 @@ class ThinkConsumerRunner:
                 self._process_record(key, value, msg.topic(), msg.partition(), msg.offset())
             except Exception as e:
                 logger.error("Error processing offset %d: %s", msg.offset(), e)
+                self._emit_error_response(key, value, str(e), msg.topic(), msg.partition(), msg.offset())
                 self._send_to_dlq(key, value, str(e), msg.topic(), msg.partition(), msg.offset())
 
     def stop(self) -> None:
@@ -171,20 +178,67 @@ class ThinkConsumerRunner:
                 self._consumer.store_offsets(offsets=[tp])
                 return
 
+        # Compact history if user message count exceeds threshold
+        effective_history = history
+        compacted_history = None
+        threshold = self._config.compaction_user_message_threshold
+
+        if threshold > 0 and len(effective_history) > 2:
+            user_msg_count = sum(1 for m in effective_history if m.get("role") == "user")
+            if user_msg_count >= threshold:
+                last_two = effective_history[-2:]
+                mid_tool_loop = any(
+                    m.get("role") == "tool" or self._has_tool_use_content(m)
+                    for m in last_two
+                )
+                if not mid_tool_loop:
+                    logger.info(
+                        "[%s] Compacting history: %d user messages >= threshold %d",
+                        session_id, user_msg_count, threshold,
+                    )
+                    old_messages = effective_history[:-2]
+                    recent_messages = list(last_two)
+
+                    provider = self._config.llm_provider.lower()
+                    if provider == "gemini":
+                        summary_input = self._to_gemini_messages(old_messages, {})
+                        summary_resp = self._call_gemini(self._config.compaction_prompt, summary_input)
+                        summary_text = self._extract_gemini_text(summary_resp)
+                    else:
+                        summary_input = self._to_claude_messages(old_messages, {})
+                        summary_resp = self._call_claude(self._config.compaction_prompt, summary_input)
+                        summary_text = self._extract_claude_text(summary_resp)
+
+                    summary_msg = {
+                        "sessionId": session_id,
+                        "userId": user_id,
+                        "role": "assistant",
+                        "content": f"[Conversation Summary]\n{summary_text}",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                    compacted_history = [summary_msg] + recent_messages
+                    effective_history = compacted_history
+                    logger.info(
+                        "[%s] History compacted: %d messages → %d",
+                        session_id, len(history), len(compacted_history),
+                    )
+
         # Build system prompt
         system_prompt = self._build_system_prompt(memoir_context, context)
 
         provider = self._config.llm_provider.lower()
 
         if provider == "gemini":
-            messages = self._to_gemini_messages(history, latest_input)
+            messages = self._to_gemini_messages(effective_history, latest_input)
             response = self._call_gemini(system_prompt, messages)
-            think_response = self._parse_gemini_response(response, session_id, user_id, latest_input, history)
+            think_response = self._parse_gemini_response(response, session_id, user_id, latest_input, effective_history)
         else:
-            messages = self._to_claude_messages(history, latest_input)
+            messages = self._to_claude_messages(effective_history, latest_input)
             response = self._call_claude(system_prompt, messages)
             think_response = self._parse_response(response, session_id, user_id, latest_input)
         think_response["prevSessionCost"] = cumulative_cost
+        if compacted_history is not None:
+            think_response["compactedHistory"] = compacted_history
 
         # Produce to output topic
         self._producer.produce(
@@ -562,6 +616,74 @@ class ThinkConsumerRunner:
             "endTurn": end_turn,
             "timestamp": now,
         }
+
+    @staticmethod
+    def _has_tool_use_content(msg: dict) -> bool:
+        content = msg.get("content")
+        if isinstance(content, list):
+            return any(
+                isinstance(b, dict) and b.get("type") == "tool_use"
+                for b in content
+            )
+        return False
+
+    @staticmethod
+    def _extract_claude_text(response: dict) -> str:
+        blocks = response.get("content", [])
+        return "\n".join(
+            b.get("text", "") for b in blocks if b.get("type") == "text"
+        )
+
+    @staticmethod
+    def _extract_gemini_text(response: dict) -> str:
+        candidates = response.get("candidates", [])
+        if not candidates:
+            return ""
+        parts = candidates[0].get("content", {}).get("parts", [])
+        return "\n".join(p.get("text", "") for p in parts if "text" in p)
+
+    def _emit_error_response(self, key: str | None, value: str | None, reason: str,
+                               topic: str, partition: int, offset: int) -> None:
+        """Emit an error response to the output topic so the user sees the failure."""
+        try:
+            session_id = key or ""
+            user_id = ""
+            if value:
+                try:
+                    ctx = json.loads(value)
+                    user_id = ctx.get("userId", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            error_response = {
+                "sessionId": session_id,
+                "userId": user_id,
+                "cost": None,
+                "prevSessionCost": None,
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "messages": [
+                    {
+                        "sessionId": session_id,
+                        "userId": user_id,
+                        "role": "assistant",
+                        "content": f"Sorry, an error occurred while processing your request: {reason}",
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                ],
+                "toolUses": [],
+                "endTurn": True,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            self._producer.produce(
+                topic=self._config.output_topic,
+                key=session_id,
+                value=json.dumps(error_response),
+            )
+            self._producer.flush()
+            logger.info("[%s] Emitted error response to %s", session_id, self._config.output_topic)
+        except Exception as ex:
+            logger.error("Failed to emit error response: %s", ex)
 
     def _send_to_dlq(self, key: str | None, value: str | None, reason: str, topic: str, partition: int, offset: int) -> None:
         headers = [

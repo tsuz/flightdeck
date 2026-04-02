@@ -106,7 +106,7 @@ public class MemoirSessionEndProcessor {
                 ? new ThinkResponse(
                         ctx.sessionId(), ctx.userId(), ctx.cost(), null,
                         0, 0, ctx.history(), null, true,
-                        Instant.now().toString())
+                        Instant.now().toString(), null)
                 : null;
 
         return new MemoirSessionEnd(

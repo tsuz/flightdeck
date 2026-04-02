@@ -77,8 +77,14 @@ public class AccumulateSessionContextProcessor {
 
                         // Aggregator — append each ThinkResponse's messages into the history
                         (sessionId, response, current) -> {
+                            // If compaction was performed, use the compacted history
+                            // as the base instead of the full accumulated history.
+                            List<MessageInput> baseHistory =
+                                    response.compactedHistory() != null
+                                    ? response.compactedHistory()
+                                    : current.history();
                             List<MessageInput> updatedHistory = appendMessages(
-                                    current.history(), response.messages());
+                                    baseHistory, response.messages());
 
                             Double updatedCost;
                             if (current.cost() == null && response.cost() == null) {

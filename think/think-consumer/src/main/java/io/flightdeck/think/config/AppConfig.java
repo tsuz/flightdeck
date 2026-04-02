@@ -67,6 +67,18 @@ public final class AppConfig {
         BUDGET_PRICE_PER_SESSION = (val != null && !val.isBlank()) ? Double.parseDouble(val) : null;
     }
 
+    // ── Compaction ──────────────────────────────────────────────────────────
+    public static final int COMPACTION_USER_MESSAGE_TRIGGER =
+            Integer.parseInt(env("COMPACTION_USER_MESSAGE_TRIGGER", "-1"));
+
+    public static final int COMPACTION_USER_MESSAGE_UNTIL =
+            Integer.parseInt(env("COMPACTION_USER_MESSAGE_UNTIL", "2"));
+
+    public static final String COMPACTION_PROMPT = env("COMPACTION_PROMPT",
+            "Summarize the following conversation concisely. " +
+            "Preserve key facts, decisions, user preferences, and any context needed " +
+            "to continue the conversation naturally. Output only the summary.");
+
     // ── Consumer tuning ─────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =
             Long.parseLong(env("POLL_TIMEOUT_MS", "1000"));

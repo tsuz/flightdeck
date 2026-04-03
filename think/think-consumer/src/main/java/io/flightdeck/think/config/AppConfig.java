@@ -68,8 +68,16 @@ public final class AppConfig {
     }
 
     // ── Compaction ──────────────────────────────────────────────────────────
-    public static final int COMPACTION_USER_MESSAGE_TRIGGER =
-            Integer.parseInt(env("COMPACTION_USER_MESSAGE_TRIGGER", "-1"));
+    public static final int COMPACTION_USER_MESSAGE_TRIGGER;
+
+    static {
+        int raw = Integer.parseInt(env("COMPACTION_USER_MESSAGE_TRIGGER", "-1"));
+        if (raw > 0 && raw < 2) {
+            throw new IllegalStateException(
+                    "COMPACTION_USER_MESSAGE_TRIGGER must be >= 2 or -1 (disabled), got: " + raw);
+        }
+        COMPACTION_USER_MESSAGE_TRIGGER = raw;
+    }
 
     public static final int COMPACTION_USER_MESSAGE_UNTIL =
             Integer.parseInt(env("COMPACTION_USER_MESSAGE_UNTIL", "2"));

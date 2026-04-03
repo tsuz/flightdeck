@@ -126,6 +126,12 @@ public class ThinkConsumer implements AutoCloseable {
     public void run() {
         consumer.subscribe(List.of(AppConfig.INPUT_TOPIC));
         log.info("Think consumer started — listening on topic: {}", AppConfig.INPUT_TOPIC);
+        log.info("Compaction config: COMPACTION_USER_MESSAGE_TRIGGER={} COMPACTION_USER_MESSAGE_UNTIL={} COMPACTION_PROMPT={}",
+                AppConfig.COMPACTION_USER_MESSAGE_TRIGGER,
+                AppConfig.COMPACTION_USER_MESSAGE_UNTIL,
+                AppConfig.COMPACTION_PROMPT.length() > 80
+                        ? AppConfig.COMPACTION_PROMPT.substring(0, 80) + "..."
+                        : AppConfig.COMPACTION_PROMPT);
 
         while (running) {
             ConsumerRecords<String, String> records = consumer.poll(
@@ -158,7 +164,6 @@ public class ThinkConsumer implements AutoCloseable {
         // 1. Deserialize input
         FullSessionContext context = mapper.readValue(record.value(), FullSessionContext.class);
 
-        // Use record key if present, otherwise fall back to session_id from the payload
         String sessionId = record.key() != null ? record.key() : context.sessionId();
         String userId = context.userId();
 
@@ -167,7 +172,7 @@ public class ThinkConsumer implements AutoCloseable {
                 context.history() != null ? context.history().size() : 0,
                 context.latestInput() != null ? context.latestInput().role() : "null");
 
-        // 2. Check session budget before calling Claude API
+        // 2. Check session budget
         if (AppConfig.BUDGET_PRICE_PER_SESSION != null
                 && context.cost() != null
                 && context.cost() >= AppConfig.BUDGET_PRICE_PER_SESSION) {
@@ -182,33 +187,19 @@ public class ThinkConsumer implements AutoCloseable {
                     AppConfig.BUDGET_PRICE_PER_SESSION);
 
             ThinkResponse budgetResponse = new ThinkResponse(
-                    sessionId,
-                    userId,
-                    null,
-                    context.cost(),
-                    0,
-                    0,
-                    List.of(new MessageInput(
-                            sessionId, userId, "assistant", budgetMessage,
-                            java.time.Instant.now().toString(), null
-                    )),
-                    null,
-                    true,
-                    java.time.Instant.now().toString(),
-                    null
-            );
+                    sessionId, userId, null, context.cost(), 0, 0,
+                    context.history(),
+                    context.latestInput(),
+                    List.of(new MessageInput(sessionId, userId, "assistant", budgetMessage,
+                            java.time.Instant.now().toString(), null)),
+                    null, true, java.time.Instant.now().toString());
 
-            String outputJson = mapper.writeValueAsString(budgetResponse);
-            ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
-                    AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
-            producer.send(outputRecord);
-            producer.flush();
+            produceResponse(sessionId, budgetResponse);
             return;
         }
 
         // 3. Compact history if user message count exceeds trigger
         List<MessageInput> effectiveHistory = context.history();
-        List<MessageInput> compactedHistory = null;
 
         if (AppConfig.COMPACTION_USER_MESSAGE_TRIGGER > 0
                 && effectiveHistory != null) {
@@ -218,17 +209,13 @@ public class ThinkConsumer implements AutoCloseable {
                     .count();
 
             if (userMessageCount >= AppConfig.COMPACTION_USER_MESSAGE_TRIGGER) {
-                // Find the split point: keep the last START user messages and everything after them.
                 int splitIndex = findCompactionSplitIndex(
                         effectiveHistory, AppConfig.COMPACTION_USER_MESSAGE_UNTIL);
 
                 if (splitIndex > 0) {
-                    List<MessageInput> recentMessages = effectiveHistory.subList(
-                            splitIndex, effectiveHistory.size());
-
-                    // Guard: skip compaction if recent messages are mid-tool-loop
-                    boolean midToolLoop = recentMessages.stream().anyMatch(m ->
-                            "tool".equals(m.role()) || hasToolUseContent(m));
+                    // Guard: skip compaction during active tool loop
+                    boolean midToolLoop = context.latestInput() != null
+                            && "tool".equals(context.latestInput().role());
 
                     if (!midToolLoop) {
                         log.info("[{}] Compacting history: {} user messages >= trigger {}, keeping from index {}",
@@ -236,6 +223,8 @@ public class ThinkConsumer implements AutoCloseable {
                                 AppConfig.COMPACTION_USER_MESSAGE_TRIGGER, splitIndex);
 
                         List<MessageInput> oldMessages = effectiveHistory.subList(0, splitIndex);
+                        List<MessageInput> recentMessages = effectiveHistory.subList(
+                                splitIndex, effectiveHistory.size());
 
                         // Summarize old messages via LLM
                         List<Map<String, Object>> summaryInput =
@@ -243,21 +232,21 @@ public class ThinkConsumer implements AutoCloseable {
                         ThinkResponse summaryResponse = llmApiService.call(
                                 AppConfig.COMPACTION_PROMPT, summaryInput, sessionId, userId);
 
-                        String summaryText = extractTextFromMessages(summaryResponse.messages());
+                        String summaryText = extractTextFromMessages(
+                                summaryResponse.lastInputResponse());
 
                         MessageInput summaryMsg = new MessageInput(
                                 sessionId, userId, "assistant",
                                 "[Conversation Summary]\n" + summaryText,
                                 java.time.Instant.now().toString(), null);
 
-                        compactedHistory = new ArrayList<>();
-                        compactedHistory.add(summaryMsg);
-                        compactedHistory.addAll(recentMessages);
-
-                        effectiveHistory = compactedHistory;
+                        List<MessageInput> compacted = new ArrayList<>();
+                        compacted.add(summaryMsg);
+                        compacted.addAll(recentMessages);
+                        effectiveHistory = compacted;
 
                         log.info("[{}] History compacted: {} messages → {}",
-                                sessionId, context.history().size(), compactedHistory.size());
+                                sessionId, context.history().size(), effectiveHistory.size());
                     }
                 }
             }
@@ -273,49 +262,35 @@ public class ThinkConsumer implements AutoCloseable {
         // 6. Call LLM API
         ThinkResponse thinkResponse = llmApiService.call(systemPrompt, llmMessages, sessionId, userId);
 
-        // 7. Attach prevSessionCost from the enriched context
+        // 7. Build final ThinkResponse with previousMessages, lastInputMessage, lastInputResponse
         Double prevSessionCost = context.cost();
 
-        // 8. Prepend the user's latestInput to the response so downstream
-        //    processors see the request-response pair for this turn.
-        if (context.latestInput() != null) {
-            List<MessageInput> augmentedMessages = new ArrayList<>();
-            augmentedMessages.add(context.latestInput());
-            if (thinkResponse.messages() != null) {
-                augmentedMessages.addAll(thinkResponse.messages());
-            }
-            thinkResponse = new ThinkResponse(
-                    thinkResponse.sessionId(),
-                    thinkResponse.userId(),
-                    thinkResponse.cost(),
-                    prevSessionCost,
-                    thinkResponse.inputTokens(),
-                    thinkResponse.outputTokens(),
-                    augmentedMessages,
-                    thinkResponse.toolUses(),
-                    thinkResponse.endTurn(),
-                    thinkResponse.timestamp(),
-                    compactedHistory
-            );
-        } else {
-            // Still need to set prevSessionCost even without latestInput prepend
-            thinkResponse = new ThinkResponse(
-                    thinkResponse.sessionId(),
-                    thinkResponse.userId(),
-                    thinkResponse.cost(),
-                    prevSessionCost,
-                    thinkResponse.inputTokens(),
-                    thinkResponse.outputTokens(),
-                    thinkResponse.messages(),
-                    thinkResponse.toolUses(),
-                    thinkResponse.endTurn(),
-                    thinkResponse.timestamp(),
-                    compactedHistory
-            );
-        }
+        thinkResponse = new ThinkResponse(
+                sessionId,
+                userId,
+                thinkResponse.cost(),
+                prevSessionCost,
+                thinkResponse.inputTokens(),
+                thinkResponse.outputTokens(),
+                effectiveHistory,                           // previousMessages
+                context.latestInput(),                      // lastInputMessage
+                thinkResponse.lastInputResponse(),          // lastInputResponse (from LLM service)
+                thinkResponse.toolUses(),
+                thinkResponse.endTurn(),
+                thinkResponse.timestamp());
 
         // 8. Produce to think-request-response
-        String outputJson = mapper.writeValueAsString(thinkResponse);
+        log.info("[{}] Producing ThinkResponse: previousMessages={} lastInputMessage={} lastInputResponse={}",
+                sessionId,
+                thinkResponse.previousMessages() != null ? thinkResponse.previousMessages().size() : 0,
+                thinkResponse.lastInputMessage() != null ? thinkResponse.lastInputMessage().role() : "null",
+                thinkResponse.lastInputResponse() != null ? thinkResponse.lastInputResponse().size() : 0);
+
+        produceResponse(sessionId, thinkResponse);
+    }
+
+    private void produceResponse(String sessionId, ThinkResponse response) throws Exception {
+        String outputJson = mapper.writeValueAsString(response);
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
                 AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
 
@@ -376,21 +351,11 @@ public class ThinkConsumer implements AutoCloseable {
     static ThinkResponse buildErrorResponse(String sessionId, String userId, Exception e) {
         String errorMessage = "Sorry, an error occurred while processing your request: " + e.getMessage();
         return new ThinkResponse(
-                sessionId,
-                userId,
-                null,
-                null,
-                0,
-                0,
-                List.of(new MessageInput(
-                        sessionId, userId, "assistant", errorMessage,
-                        java.time.Instant.now().toString(), null
-                )),
-                null,
-                true,
-                java.time.Instant.now().toString(),
-                null
-        );
+                sessionId, userId, null, null, 0, 0,
+                null, null,
+                List.of(new MessageInput(sessionId, userId, "assistant", errorMessage,
+                        java.time.Instant.now().toString(), null)),
+                null, true, java.time.Instant.now().toString());
     }
 
     /**

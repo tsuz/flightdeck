@@ -119,10 +119,10 @@ public class EndTurnProcessor {
      * </ul>
      */
     static UserResponse toUserResponse(String sessionId, ThinkResponse response) {
-        String content = assembleContent(response.messages());
+        String content = assembleContent(response.lastInputResponse());
 
-        String sourceAgent = (response.messages() != null)
-                ? response.messages().stream()
+        String sourceAgent = (response.lastInputResponse() != null)
+                ? response.lastInputResponse().stream()
                         .filter(m -> m.metadata() != null && m.metadata().containsKey("agent"))
                         .map(m -> String.valueOf(m.metadata().get("agent")))
                         .findFirst()

@@ -3,7 +3,7 @@ package io.flightdeck.streams;
 import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.FullSessionContext;
 import io.flightdeck.streams.model.MessageInput;
-import io.flightdeck.streams.model.SessionContext;
+import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
@@ -32,7 +32,7 @@ class MemoirEnabledTopologyTest {
 
         private TopologyTestDriver driver;
         private TestInputTopic<String, MessageInput> messageInput;
-        private TestInputTopic<String, SessionContext> contextInput;
+        private TestInputTopic<String, ThinkResponse> thinkInput;
         private TestInputTopic<String, String> memoirInput;
         private TestOutputTopic<String, FullSessionContext> enrichedOutput;
         private TestOutputTopic<String, String> memoirSessionEndOutput;
@@ -47,10 +47,10 @@ class MemoirEnabledTopologyTest {
                     Serdes.String().serializer(),
                     JsonSerde.of(MessageInput.class).serializer());
 
-            contextInput = driver.createInputTopic(
-                    Topics.SESSION_CONTEXT,
+            thinkInput = driver.createInputTopic(
+                    Topics.THINK_REQUEST_RESPONSE,
                     Serdes.String().serializer(),
-                    JsonSerde.of(SessionContext.class).serializer());
+                    JsonSerde.of(ThinkResponse.class).serializer());
 
             memoirInput = driver.createInputTopic(
                     Topics.MEMOIR_CONTEXT,
@@ -118,7 +118,7 @@ class MemoirEnabledTopologyTest {
 
         private TopologyTestDriver driver;
         private TestInputTopic<String, MessageInput> messageInput;
-        private TestInputTopic<String, SessionContext> contextInput;
+        private TestInputTopic<String, ThinkResponse> thinkInput;
         private TestOutputTopic<String, FullSessionContext> enrichedOutput;
 
         @BeforeEach
@@ -131,10 +131,10 @@ class MemoirEnabledTopologyTest {
                     Serdes.String().serializer(),
                     JsonSerde.of(MessageInput.class).serializer());
 
-            contextInput = driver.createInputTopic(
-                    Topics.SESSION_CONTEXT,
+            thinkInput = driver.createInputTopic(
+                    Topics.THINK_REQUEST_RESPONSE,
                     Serdes.String().serializer(),
-                    JsonSerde.of(SessionContext.class).serializer());
+                    JsonSerde.of(ThinkResponse.class).serializer());
 
             enrichedOutput = driver.createOutputTopic(
                     Topics.ENRICHED_MESSAGE_INPUT,
@@ -155,10 +155,13 @@ class MemoirEnabledTopologyTest {
         }
 
         @Test
-        @DisplayName("Enriched message still includes session history")
+        @DisplayName("Enriched message still includes session history from ThinkResponse")
         void sessionHistoryStillWorks() {
-            contextInput.pipeInput("sess-2", context("sess-2", "user-2", List.of(
-                    assistantMsg("sess-2", "user-2", "Prior reply."))));
+            ThinkResponse prevResponse = new ThinkResponse("sess-2", "user-2", 0.01, null, 100, 50,
+                    null, null,
+                    List.of(assistantMsg("sess-2", "user-2", "Prior reply.")),
+                    List.of(), true, TS);
+            thinkInput.pipeInput("sess-2", prevResponse);
 
             messageInput.pipeInput("sess-2", userMsg("sess-2", "user-2", "Follow-up"));
 
@@ -217,12 +220,5 @@ class MemoirEnabledTopologyTest {
 
     private static MessageInput assistantMsg(String sessionId, String userId, String content) {
         return new MessageInput(sessionId, userId, "assistant", content, TS, Map.of());
-    }
-
-    private static SessionContext context(String sessionId, String userId,
-                                          List<MessageInput> history) {
-        return new SessionContext(sessionId, userId, 0.0, history.size(),
-                history.isEmpty() ? List.of() : List.of(history.get(history.size() - 1)),
-                history, TS);
     }
 }

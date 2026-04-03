@@ -230,11 +230,12 @@ public class ClaudeApiService implements LlmApiService {
                     null,   // prevSessionCost — set by ThinkConsumer
                     inputTokens,
                     outputTokens,
-                    responseMessages,
+                    null,   // previousMessages — set by ThinkConsumer
+                    null,   // lastInputMessage — set by ThinkConsumer
+                    responseMessages,  // lastInputResponse
                     toolUses.isEmpty() ? null : toolUses,
                     endTurn,
-                    Instant.now().toString(),
-                    null    // compactedHistory — set by ThinkConsumer when compaction triggers
+                    Instant.now().toString()
             );
 
         } catch (Exception e) {

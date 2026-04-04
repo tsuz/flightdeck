@@ -84,6 +84,8 @@ public final class AppConfig {
 
     public static final String COMPACTION_PROMPT = env("COMPACTION_PROMPT",
             "Summarize the following conversation concisely. " +
+            "If the conversation starts with a previous summary, incorporate and extend it " +
+            "rather than re-summarizing it. " +
             "Preserve key facts, decisions, user preferences, and any context needed " +
             "to continue the conversation naturally. Output only the summary.");
 

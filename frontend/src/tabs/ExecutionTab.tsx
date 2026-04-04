@@ -146,7 +146,6 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
         // Attach cost info to the enriched sub-row if available
         if (currentMsgRow && v) {
           const cost = v.cost != null ? Number(v.cost) : null;
-          const llmCalls = v.llm_calls != null ? Number(v.llm_calls) : null;
           if (cost != null) {
             // Update the enriched sub-row comment to include cost
             const enrichedSub = currentMsgRow.subRows!.find(
@@ -156,7 +155,6 @@ function buildRows(events: PipelineEvent[]): TableRow[] {
               const costStr = cost < 0.01 ? `$${cost.toFixed(6)}` : `$${cost.toFixed(4)}`;
               const parts = [enrichedSub.comment];
               parts.push(`cost: ${costStr}`);
-              if (llmCalls != null) parts.push(`${llmCalls} LLM call${llmCalls !== 1 ? "s" : ""}`);
               enrichedSub.comment = parts.join(", ");
             }
           }

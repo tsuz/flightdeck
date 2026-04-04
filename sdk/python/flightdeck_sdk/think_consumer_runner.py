@@ -30,9 +30,12 @@ class ThinkConsumerConfig:
     gemini_model: str = "gemini-2.5-flash"
     gemini_max_tokens: int = 4096
     gemini_api_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    compaction_user_message_threshold: int = -1
+    compaction_user_message_trigger: int = -1
+    compaction_user_message_until: int = 2
     compaction_prompt: str = (
         "Summarize the following conversation concisely. "
+        "If the conversation starts with a previous summary, incorporate and extend it "
+        "rather than re-summarizing it. "
         "Preserve key facts, decisions, user preferences, and any context needed "
         "to continue the conversation naturally. Output only the summary."
     )
@@ -155,7 +158,9 @@ class ThinkConsumerRunner:
                     "prevSessionCost": cumulative_cost,
                     "inputTokens": 0,
                     "outputTokens": 0,
-                    "messages": [
+                    "previousMessages": history,
+                    "lastInputMessage": latest_input,
+                    "lastInputResponse": [
                         {
                             "sessionId": session_id,
                             "userId": user_id,
@@ -178,50 +183,51 @@ class ThinkConsumerRunner:
                 self._consumer.store_offsets(offsets=[tp])
                 return
 
-        # Compact history if user message count exceeds threshold
+        # Compact history if user message count exceeds trigger
         effective_history = history
         compacted_history = None
-        threshold = self._config.compaction_user_message_threshold
+        trigger = self._config.compaction_user_message_trigger
+        keep_last = self._config.compaction_user_message_until
 
-        if threshold > 0 and len(effective_history) > 2:
+        if trigger > 0 and effective_history:
             user_msg_count = sum(1 for m in effective_history if m.get("role") == "user")
-            if user_msg_count >= threshold:
-                last_two = effective_history[-2:]
-                mid_tool_loop = any(
-                    m.get("role") == "tool" or self._has_tool_use_content(m)
-                    for m in last_two
-                )
-                if not mid_tool_loop:
-                    logger.info(
-                        "[%s] Compacting history: %d user messages >= threshold %d",
-                        session_id, user_msg_count, threshold,
-                    )
-                    old_messages = effective_history[:-2]
-                    recent_messages = list(last_two)
+            if user_msg_count >= trigger:
+                split_idx = self._find_compaction_split_index(effective_history, keep_last)
+                if split_idx > 0:
+                    recent_messages = effective_history[split_idx:]
+                    # Skip compaction if we're in an active tool loop
+                    # (latest_input is a tool result)
+                    mid_tool_loop = latest_input.get("role") == "tool" if latest_input else False
+                    if not mid_tool_loop:
+                        logger.info(
+                            "[%s] Compacting history: %d user messages >= trigger %d, keeping from index %d",
+                            session_id, user_msg_count, trigger, split_idx,
+                        )
+                        old_messages = effective_history[:split_idx]
 
-                    provider = self._config.llm_provider.lower()
-                    if provider == "gemini":
-                        summary_input = self._to_gemini_messages(old_messages, {})
-                        summary_resp = self._call_gemini(self._config.compaction_prompt, summary_input)
-                        summary_text = self._extract_gemini_text(summary_resp)
-                    else:
-                        summary_input = self._to_claude_messages(old_messages, {})
-                        summary_resp = self._call_claude(self._config.compaction_prompt, summary_input)
-                        summary_text = self._extract_claude_text(summary_resp)
+                        provider = self._config.llm_provider.lower()
+                        if provider == "gemini":
+                            summary_input = self._to_gemini_messages(old_messages, {})
+                            summary_resp = self._call_gemini(self._config.compaction_prompt, summary_input, include_tools=False)
+                            summary_text = self._extract_gemini_text(summary_resp)
+                        else:
+                            summary_input = self._to_claude_messages(old_messages, {})
+                            summary_resp = self._call_claude(self._config.compaction_prompt, summary_input, include_tools=False)
+                            summary_text = self._extract_claude_text(summary_resp)
 
-                    summary_msg = {
-                        "sessionId": session_id,
-                        "userId": user_id,
-                        "role": "assistant",
-                        "content": f"[Conversation Summary]\n{summary_text}",
-                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    }
-                    compacted_history = [summary_msg] + recent_messages
-                    effective_history = compacted_history
-                    logger.info(
-                        "[%s] History compacted: %d messages → %d",
-                        session_id, len(history), len(compacted_history),
-                    )
+                        summary_msg = {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                            "role": "assistant",
+                            "content": f"[Conversation Summary]\n{summary_text}",
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        }
+                        compacted_history = [summary_msg] + recent_messages
+                        effective_history = compacted_history
+                        logger.info(
+                            "[%s] History compacted: %d messages → %d",
+                            session_id, len(history), len(compacted_history),
+                        )
 
         # Build system prompt
         system_prompt = self._build_system_prompt(memoir_context, context)
@@ -237,8 +243,9 @@ class ThinkConsumerRunner:
             response = self._call_claude(system_prompt, messages)
             think_response = self._parse_response(response, session_id, user_id, latest_input)
         think_response["prevSessionCost"] = cumulative_cost
-        if compacted_history is not None:
-            think_response["compactedHistory"] = compacted_history
+        think_response["previousMessages"] = effective_history
+        think_response["lastInputMessage"] = latest_input
+        think_response["lastInputResponse"] = think_response.pop("messages", [])
 
         # Produce to output topic
         self._producer.produce(
@@ -315,7 +322,7 @@ class ThinkConsumerRunner:
         else:
             messages.append({"role": role, "content": text})
 
-    def _call_claude(self, system_prompt: str, messages: list[dict]) -> dict:
+    def _call_claude(self, system_prompt: str, messages: list[dict], *, include_tools: bool = True) -> dict:
         body: dict[str, Any] = {
             "model": self._config.claude_model,
             "max_tokens": self._config.claude_max_tokens,
@@ -323,7 +330,7 @@ class ThinkConsumerRunner:
             "messages": messages,
         }
 
-        if self._config.tools:
+        if include_tools and self._config.tools:
             body["tools"] = self._config.tools
 
         data = json.dumps(body).encode()
@@ -361,10 +368,6 @@ class ThinkConsumerRunner:
         content_blocks = response.get("content", [])
         messages: list[dict] = []
         tool_uses: list[dict] = []
-
-        # Prepend latest input for downstream request-response pairing
-        if latest_input:
-            messages.append(latest_input)
 
         has_tool_use = any(b.get("type") == "tool_use" for b in content_blocks)
 
@@ -495,14 +498,14 @@ class ThinkConsumerRunner:
                 parts.append({"functionResponse": {"name": name, "response": res_data}})
         return parts
 
-    def _call_gemini(self, system_prompt: str, contents: list[dict]) -> dict:
+    def _call_gemini(self, system_prompt: str, contents: list[dict], *, include_tools: bool = True) -> dict:
         body: dict[str, Any] = {
             "system_instruction": {"parts": [{"text": system_prompt}]},
             "contents": contents,
             "generationConfig": {"maxOutputTokens": self._config.gemini_max_tokens},
         }
 
-        if self._config.tools:
+        if include_tools and self._config.tools:
             func_decls = []
             for tool in self._config.tools:
                 decl: dict[str, Any] = {
@@ -556,10 +559,6 @@ class ThinkConsumerRunner:
         messages: list[dict] = []
         tool_uses: list[dict] = []
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-        # Prepend latest input
-        if latest_input:
-            messages.append(latest_input)
 
         # Build content blocks in Claude-compatible format for history preservation
         content_blocks: list[dict] = []
@@ -616,6 +615,25 @@ class ThinkConsumerRunner:
             "endTurn": end_turn,
             "timestamp": now,
         }
+
+    @staticmethod
+    def _find_compaction_split_index(history: list[dict], keep_last: int) -> int:
+        """Find the index where to split history for compaction.
+        Everything before this index is summarized; from this index onward is kept.
+        Returns -1 if nothing to compact."""
+        if not history or keep_last <= 0:
+            return -1
+        total_user = sum(1 for m in history if m.get("role") == "user")
+        if total_user <= keep_last:
+            return -1
+        target = total_user - keep_last
+        seen = 0
+        for i, m in enumerate(history):
+            if m.get("role") == "user":
+                seen += 1
+                if seen > target:
+                    return i
+        return -1
 
     @staticmethod
     def _has_tool_use_content(msg: dict) -> bool:

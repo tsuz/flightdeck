@@ -33,7 +33,6 @@ public class MonitoringApp {
             P + "tool-use-result",
             P + "tool-use-all-complete",
             P + "tool-use-latency",
-            P + "session-cost",
             P + "message-output",
             P + "session-end",
             P + "memoir-context",

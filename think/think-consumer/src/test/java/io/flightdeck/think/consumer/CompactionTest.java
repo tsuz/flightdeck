@@ -119,7 +119,7 @@ class CompactionTest {
 
         // --- Mock: compaction call ---
         ThinkResponse summaryResponse = new ThinkResponse(
-                SESSION, USER, 0.001, null, 50, 30,
+                SESSION, USER, null, null, 0.001, 50, 30,
                 null, null,
                 List.of(assistantMsg("User listed topics. Found 5 topics including topicA and topicB.")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -133,7 +133,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(anyList(), eq(latestInput)))
                 .thenReturn(mainApiMessages);
         ThinkResponse mainResponse = new ThinkResponse(
-                SESSION, USER, 0.01, null, 200, 100,
+                SESSION, USER, null, null, 0.01, 200, 100,
                 null, null,
                 List.of(assistantMsg("All brokers healthy.")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -178,6 +178,12 @@ class CompactionTest {
         assertThat(produced.compactionInputTokens()).isEqualTo(50);
         assertThat(produced.compactionOutputTokens()).isEqualTo(30);
         assertThat(produced.compactionCost()).isGreaterThan(0.0);
+
+        // total_session_cost = previous_session_cost(0.05) + think_cost(0.01) + compaction_cost(0.001)
+        assertThat(produced.previousSessionCost()).isEqualTo(0.05);
+        assertThat(produced.thinkCost()).isEqualTo(0.01);
+        assertThat(produced.totalSessionCost()).isCloseTo(0.061, within(0.000001));
+
         assertThat(produced.lastInputMessage().contentAsString()).isEqualTo("show broker health");
         assertThat(produced.lastInputResponse()).hasSize(1);
         assertThat(produced.lastInputResponse().get(0).contentAsString()).isEqualTo("All brokers healthy.");
@@ -234,7 +240,7 @@ class CompactionTest {
                 .thenReturn(oldApiMessages);
 
         ThinkResponse summaryResponse = new ThinkResponse(
-                SESSION, USER, 0.002, null, 80, 40,
+                SESSION, USER, null, null, 0.002, 80, 40,
                 null, null,
                 List.of(assistantMsg("User searched flights to NYC. Found AA123, UA456, DL789.")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -253,7 +259,7 @@ class CompactionTest {
                 .thenReturn(mainApiMessages);
 
         ThinkResponse mainResponse = new ThinkResponse(
-                SESSION, USER, 0.01, null, 200, 100,
+                SESSION, USER, null, null, 0.01, 200, 100,
                 null, null,
                 List.of(assistantMsg("You're welcome!")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -310,7 +316,7 @@ class CompactionTest {
                 .thenReturn(apiMessages);
 
         ThinkResponse mainResponse = new ThinkResponse(
-                SESSION, USER, 0.01, null, 100, 50,
+                SESSION, USER, null, null, 0.01, 100, 50,
                 null, null,
                 List.of(assistantMsg("Nice!")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -339,6 +345,13 @@ class CompactionTest {
         String producedJson = capturingProducer.records.get(0).value();
         ThinkResponse produced = mapper.readValue(producedJson, ThinkResponse.class);
         assertThat(produced.previousMessages()).hasSize(history.size());
+
+        // total_session_cost = previous_session_cost(0.02) + think_cost(0.01) + compaction_cost(0.0)
+        assertThat(produced.previousSessionCost()).isEqualTo(0.02);
+        assertThat(produced.thinkCost()).isEqualTo(0.01);
+        assertThat(produced.totalSessionCost()).isCloseTo(0.03, within(0.000001));
+        assertThat(produced.compaction()).isFalse();
+        assertThat(produced.compactionCost()).isEqualTo(0.0);
     }
 
     @Test
@@ -369,7 +382,7 @@ class CompactionTest {
                 .thenReturn(apiMessages);
 
         ThinkResponse mainResponse = new ThinkResponse(
-                SESSION, USER, 0.01, null, 100, 50,
+                SESSION, USER, null, null, 0.01, 100, 50,
                 null, null,
                 List.of(assistantMsg("Here are the results.")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -432,7 +445,7 @@ class CompactionTest {
         when(mockLlm.callWithoutTools(
                 eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
                 anyList(), eq(sessionId), eq(userId)))
-                .thenReturn(new ThinkResponse(sessionId, userId, 0.001, null, 20, 15,
+                .thenReturn(new ThinkResponse(sessionId, userId, null, null, 0.001, 20, 15,
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "User greeted the Kafka assistant.", TS, null)),
@@ -442,7 +455,7 @@ class CompactionTest {
         List<Map<String, Object>> mainApiMsgs = List.of(Map.of("role", "user", "content", "main"));
         when(mockLlm.toApiMessages(anyList(), eq(context.latestInput()))).thenReturn(mainApiMsgs);
         when(mockLlm.call(anyString(), eq(mainApiMsgs), eq(sessionId), eq(userId)))
-                .thenReturn(new ThinkResponse(sessionId, userId, 0.005, null, 200, 100,
+                .thenReturn(new ThinkResponse(sessionId, userId, null, null, 0.005, 200, 100,
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "think-consumer-group has 0 lag.", TS, null)),
@@ -504,7 +517,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(eq(context.history()), eq(toolLatestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "test")));
         when(mockLlm.call(anyString(), anyList(), eq(sessionId), eq(userId)))
-                .thenReturn(new ThinkResponse(sessionId, userId, 0.01, null, 100, 50,
+                .thenReturn(new ThinkResponse(sessionId, userId, null, null, 0.01, 100, 50,
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "The group has 0 lag.", TS, null)),
@@ -545,7 +558,7 @@ class CompactionTest {
                 .thenReturn(List.of(Map.of("role", "user", "content", "msg1")));
         when(mockLlm.callWithoutTools(eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
                 anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.0, null, 10, 10,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.0, 10, 10,
                         null, null,
                         List.of(assistantMsg("summary")), null, true, false, 0, 0, 0.0, TS));
 
@@ -553,7 +566,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(anyList(), eq(latestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "msg4")));
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.01, null, 50, 50,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.01, 50, 50,
                         null, null,
                         List.of(assistantMsg("done")), null, true, false, 0, 0, 0.0, TS));
 
@@ -609,7 +622,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(eq(history), eq(latestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "test")));
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.01, null, 100, 50,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.01, 100, 50,
                         null, null, List.of(assistantMsg("You're welcome!")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -659,14 +672,14 @@ class CompactionTest {
 
         String summaryText = "User asked 6 questions (q1-q6) using various tools. All returned results.";
         when(mockLlm.callWithoutTools(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.005, null, 500, 100,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.005, 500, 100,
                         null, null, List.of(assistantMsg(summaryText)),
                         null, true, false, 0, 0, 0.0, TS));
 
         List<Map<String, Object>> mainApiMsgs = List.of(Map.of("role", "user", "content", "main"));
         when(mockLlm.toApiMessages(anyList(), eq(latestInput))).thenReturn(mainApiMsgs);
         when(mockLlm.call(anyString(), eq(mainApiMsgs), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.01, null, 200, 50,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.01, 200, 50,
                         null, null, List.of(assistantMsg("answer 9")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -755,14 +768,14 @@ class CompactionTest {
         // The summary should incorporate the old summary + new info
         String newSummary = "User asked about topics. Then checked broker health (all OK) and it was healthy.";
         when(mockLlm.callWithoutTools(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.002, null, 80, 40,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.002, 80, 40,
                         null, null, List.of(assistantMsg(newSummary)),
                         null, true, false, 0, 0, 0.0, TS));
 
         List<Map<String, Object>> mainApiMsgs = List.of(Map.of("role", "user", "content", "main"));
         when(mockLlm.toApiMessages(anyList(), eq(latestInput))).thenReturn(mainApiMsgs);
         when(mockLlm.call(anyString(), eq(mainApiMsgs), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.01, null, 200, 80,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.01, 200, 80,
                         null, null, List.of(assistantMsg("Nothing else to report.")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -820,7 +833,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(eq(history), eq(latestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "test")));
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.005, null, 100, 30,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.005, 100, 30,
                         null, null, List.of(assistantMsg("No problem!")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -913,14 +926,14 @@ class CompactionTest {
 
         // Compaction returns specific token counts and cost
         when(mockLlm.callWithoutTools(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.00234, null, 150, 42,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.00234, 150, 42,
                         null, null, List.of(assistantMsg("Summary of q1.")),
                         null, true, false, 0, 0, 0.0, TS));
 
         when(mockLlm.toApiMessages(anyList(), eq(latestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "test")));
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.008, null, 300, 80,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.008, 300, 80,
                         null, null, List.of(assistantMsg("a4")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -938,9 +951,13 @@ class CompactionTest {
         assertThat(produced.compactionCost()).isEqualTo(0.00234);
 
         // Main response fields
-        assertThat(produced.cost()).isEqualTo(0.008);
-        assertThat(produced.inputTokens()).isEqualTo(300);
-        assertThat(produced.outputTokens()).isEqualTo(80);
+        assertThat(produced.thinkCost()).isEqualTo(0.008);
+        assertThat(produced.thinkInputTokens()).isEqualTo(300);
+        assertThat(produced.thinkOutputTokens()).isEqualTo(80);
+
+        // total_session_cost = previous_session_cost(0.05) + think_cost(0.008) + compaction_cost(0.00234)
+        assertThat(produced.previousSessionCost()).isEqualTo(0.05);
+        assertThat(produced.totalSessionCost()).isCloseTo(0.06034, within(0.000001));
 
         // Summary is correct
         assertThat(produced.previousMessages().get(0).contentAsString()).isEqualTo(
@@ -973,7 +990,7 @@ class CompactionTest {
         when(mockLlm.toApiMessages(eq(history), eq(latestInput)))
                 .thenReturn(List.of(Map.of("role", "user", "content", "test")));
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
-                .thenReturn(new ThinkResponse(SESSION, USER, 0.005, null, 100, 30,
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.005, 100, 30,
                         null, null, List.of(assistantMsg("Final result.")),
                         null, true, false, 0, 0, 0.0, TS));
 
@@ -1051,6 +1068,113 @@ class CompactionTest {
     void splitIndex_emptyHistory() {
         assertThat(ThinkConsumer.findCompactionSplitIndex(null, 2)).isEqualTo(-1);
         assertThat(ThinkConsumer.findCompactionSplitIndex(List.of(), 2)).isEqualTo(-1);
+    }
+
+    // ── Cost field tests ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("First turn (previousSessionCost=null): totalSessionCost = thinkCost")
+    void firstTurn_totalSessionCostEqualsThinkCost() throws Exception {
+        List<MessageInput> history = List.of();
+        MessageInput latestInput = userMsg("Hello");
+
+        FullSessionContext context = new FullSessionContext(
+                SESSION, USER, null, history, latestInput, null, TS);
+
+        List<Map<String, Object>> apiMessages = List.of(
+                Map.of("role", "user", "content", "Hello"));
+        when(mockLlm.toApiMessages(eq(history), eq(latestInput)))
+                .thenReturn(apiMessages);
+        when(mockLlm.call(anyString(), eq(apiMessages), eq(SESSION), eq(USER)))
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.005, 100, 40,
+                        null, null, List.of(assistantMsg("Hi there!")),
+                        null, true, false, 0, 0, 0.0, TS));
+
+        thinkConsumer.processRecord(new ConsumerRecord<>(
+                "test-enriched-message-input", 0, 0, SESSION,
+                mapper.writeValueAsString(context)));
+
+        ThinkResponse produced = mapper.readValue(
+                capturingProducer.records.get(0).value(), ThinkResponse.class);
+
+        assertThat(produced.previousSessionCost()).isNull();
+        assertThat(produced.thinkCost()).isEqualTo(0.005);
+        assertThat(produced.totalSessionCost()).isCloseTo(0.005, within(0.000001));
+        assertThat(produced.thinkInputTokens()).isEqualTo(100);
+        assertThat(produced.thinkOutputTokens()).isEqualTo(40);
+        assertThat(produced.compaction()).isFalse();
+        assertThat(produced.compactionCost()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("Both costs > 0: totalSessionCost = previousSessionCost + thinkCost")
+    void bothCostsPositive_totalSessionCostAddsUp() throws Exception {
+        List<MessageInput> history = List.of(
+                userMsg("Hello"), assistantMsg("Hi!"));
+        MessageInput latestInput = userMsg("What's 2+2?");
+
+        FullSessionContext context = new FullSessionContext(
+                SESSION, USER, 0.04, history, latestInput, null, TS);
+
+        List<Map<String, Object>> apiMessages = List.of(
+                Map.of("role", "user", "content", "What's 2+2?"));
+        when(mockLlm.toApiMessages(eq(history), eq(latestInput)))
+                .thenReturn(apiMessages);
+        when(mockLlm.call(anyString(), eq(apiMessages), eq(SESSION), eq(USER)))
+                .thenReturn(new ThinkResponse(SESSION, USER, null, null, 0.012, 250, 90,
+                        null, null, List.of(assistantMsg("4")),
+                        null, true, false, 0, 0, 0.0, TS));
+
+        thinkConsumer.processRecord(new ConsumerRecord<>(
+                "test-enriched-message-input", 0, 0, SESSION,
+                mapper.writeValueAsString(context)));
+
+        ThinkResponse produced = mapper.readValue(
+                capturingProducer.records.get(0).value(), ThinkResponse.class);
+
+        assertThat(produced.previousSessionCost()).isEqualTo(0.04);
+        assertThat(produced.thinkCost()).isEqualTo(0.012);
+        assertThat(produced.totalSessionCost()).isCloseTo(0.052, within(0.000001));
+        assertThat(produced.thinkInputTokens()).isEqualTo(250);
+        assertThat(produced.thinkOutputTokens()).isEqualTo(90);
+        assertThat(produced.compaction()).isFalse();
+        assertThat(produced.compactionCost()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("Budget exceeded: cost fields set correctly, LLM not called")
+    void budgetExceeded_costFieldsSetCorrectly() throws Exception {
+        if (io.flightdeck.think.config.AppConfig.BUDGET_PRICE_PER_SESSION == null) {
+            return; // Budget not configured in test env
+        }
+
+        double budgetLimit = io.flightdeck.think.config.AppConfig.BUDGET_PRICE_PER_SESSION;
+        double overBudgetCost = budgetLimit + 0.01;
+
+        List<MessageInput> history = List.of(
+                userMsg("Hello"), assistantMsg("Hi!"));
+        MessageInput latestInput = userMsg("One more question");
+
+        FullSessionContext context = new FullSessionContext(
+                SESSION, USER, overBudgetCost, history, latestInput, null, TS);
+
+        thinkConsumer.processRecord(new ConsumerRecord<>(
+                "test-enriched-message-input", 0, 0, SESSION,
+                mapper.writeValueAsString(context)));
+
+        ThinkResponse produced = mapper.readValue(
+                capturingProducer.records.get(0).value(), ThinkResponse.class);
+
+        verify(mockLlm, never()).call(anyString(), anyList(), anyString(), anyString());
+
+        assertThat(produced.totalSessionCost()).isEqualTo(overBudgetCost);
+        assertThat(produced.previousSessionCost()).isEqualTo(overBudgetCost);
+        assertThat(produced.thinkCost()).isNull();
+        assertThat(produced.thinkInputTokens()).isEqualTo(0);
+        assertThat(produced.thinkOutputTokens()).isEqualTo(0);
+        assertThat(produced.endTurn()).isTrue();
+        assertThat(produced.lastInputResponse().get(0).contentAsString())
+                .contains("budget");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

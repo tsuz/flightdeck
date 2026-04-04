@@ -1,7 +1,9 @@
 package io.flightdeck.streams.processors;
 
 import io.flightdeck.streams.config.Topics;
-import io.flightdeck.streams.model.*;
+import io.flightdeck.streams.model.FullSessionContext;
+import io.flightdeck.streams.model.MessageInput;
+import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
@@ -23,8 +25,6 @@ import static org.assertj.core.api.Assertions.*;
  *   message-input  (KStream)
  *       leftJoin
  *   think-request-response (KTable)
- *       leftJoin
- *   session-cost (KTable)
  *       ▼
  *   enriched-message-input (KStream)
  */
@@ -55,11 +55,7 @@ class EnrichInputMessageProcessorTest {
         KTable<String, ThinkResponse> thinkTable = builder.table(
                 Topics.THINK_REQUEST_RESPONSE,
                 Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
-        KTable<String, SessionCost> sessionCostTable = builder.table(
-                Topics.SESSION_COST,
-                Consumed.with(Serdes.String(), JsonSerde.of(SessionCost.class)));
-
-        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, sessionCostTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");
@@ -111,7 +107,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("Message with existing ThinkResponse carries the reconstructed history")
     void messageWithThinkResponse_includesHistory() {
         // Seed the KTable with a previous ThinkResponse
-        ThinkResponse prevResponse = new ThinkResponse("sess-h", "user-A", 0.01, null, 100, 50,
+        ThinkResponse prevResponse = new ThinkResponse("sess-h", "user-A", 0.01, null, 0.01, 100, 50,
                 List.of(assistantMsg("sess-h", "user-A", "First reply.")),
                 userMsg("sess-h", "user-A", "Second question"),
                 List.of(assistantMsg("sess-h", "user-A", "Second reply.")),
@@ -133,7 +129,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("latestInput is always the incoming message, not part of history")
     void latestInput_isNotInHistory() {
-        ThinkResponse prevResponse = new ThinkResponse("sess-li", "u", 0.01, null, 100, 50,
+        ThinkResponse prevResponse = new ThinkResponse("sess-li", "u", 0.01, null, 0.01, 100, 50,
                 null, null,
                 List.of(assistantMsg("sess-li", "u", "Prior turn.")),
                 List.of(), true, false, 0, 0, 0.0, TS);
@@ -163,7 +159,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("userId is taken from the incoming message when present")
     void userId_fromMessage() {
-        ThinkResponse prevResponse = new ThinkResponse("sess-u1", "old-user", 0.01, null, 100, 50,
+        ThinkResponse prevResponse = new ThinkResponse("sess-u1", "old-user", 0.01, null, 0.01, 100, 50,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-u1", prevResponse);
         messageInput.pipeInput("sess-u1", userMsg("sess-u1", "new-user", "hi"));
@@ -174,7 +170,7 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("userId falls back to ThinkResponse value when message carries none")
     void userId_fallsBackToThinkResponse() {
-        ThinkResponse prevResponse = new ThinkResponse("sess-u2", "ctx-user", 0.01, null, 100, 50,
+        ThinkResponse prevResponse = new ThinkResponse("sess-u2", "ctx-user", 0.01, null, 0.01, 100, 50,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-u2", prevResponse);
         // Message has null userId (e.g. scheduler-triggered input)
@@ -199,12 +195,12 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("Two sessions receive their own independent histories")
     void sessionIsolation() {
-        ThinkResponse respA = new ThinkResponse("A", "u1", 0.01, null, 100, 50,
+        ThinkResponse respA = new ThinkResponse("A", "u1", 0.01, null, 0.01, 100, 50,
                 List.of(assistantMsg("A", "u1", "a1")),
                 null,
                 List.of(assistantMsg("A", "u1", "a2")),
                 List.of(), true, false, 0, 0, 0.0, TS);
-        ThinkResponse respB = new ThinkResponse("B", "u2", 0.01, null, 100, 50,
+        ThinkResponse respB = new ThinkResponse("B", "u2", 0.01, null, 0.01, 100, 50,
                 null, null,
                 List.of(assistantMsg("B", "u2", "b1")),
                 List.of(), true, false, 0, 0, 0.0, TS);
@@ -242,7 +238,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrichWithThinkResponse(): ThinkResponse with null fields is treated as empty history")
     void enrich_thinkResponseWithNullFields() {
         MessageInput msg = userMsg("s", "u", "hello");
-        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0.0, 0, 0,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
         assertThat(result.history()).isEmpty();
@@ -255,7 +251,7 @@ class EnrichInputMessageProcessorTest {
         MessageInput prior = assistantMsg("s", "u", "old");
         MessageInput inputMsg = userMsg("s", "u", "question");
         MessageInput response = assistantMsg("s", "u", "answer");
-        ThinkResponse resp = new ThinkResponse("s", "u", 0.01, null, 100, 50,
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.01, null, 0.01, 100, 50,
                 List.of(prior), inputMsg, List.of(response), List.of(), true, false, 0, 0, 0.0, TS);
         FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
         assertThat(result.history()).containsExactly(prior, inputMsg, response);
@@ -266,7 +262,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrichWithThinkResponse(): userId prefers message over ThinkResponse")
     void enrich_userIdFromMessage() {
         MessageInput msg = userMsg("s", "msg-user", "hi");
-        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
+        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 0.01, 100, 50,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("msg-user");
     }
@@ -275,9 +271,28 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("enrichWithThinkResponse(): userId falls back to ThinkResponse when message userId is blank")
     void enrich_userIdFallback() {
         MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
-        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
+        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 0.01, 100, 50,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("ctx-user");
+    }
+
+    // ── Cost from ThinkResponse ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Cost flows from ThinkResponse.totalSessionCost into FullSessionContext.cost")
+    void costFlowsFromThinkResponseTotalSessionCost() {
+        // Seed the KTable with a ThinkResponse that has totalSessionCost=0.05
+        ThinkResponse prevResponse = new ThinkResponse("sess-cost", "user-C", 0.05, null, 0.01, 100, 50,
+                null, null,
+                List.of(assistantMsg("sess-cost", "user-C", "Prior reply.")),
+                List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("sess-cost", prevResponse);
+
+        // Send a new message-input
+        messageInput.pipeInput("sess-cost", userMsg("sess-cost", "user-C", "Follow-up?"));
+
+        FullSessionContext full = fullContextOutput.readRecord().value();
+        assertThat(full.cost()).isEqualTo(0.05);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

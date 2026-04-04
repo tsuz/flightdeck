@@ -157,7 +157,7 @@ class MemoirEnabledTopologyTest {
         @Test
         @DisplayName("Enriched message still includes session history from ThinkResponse")
         void sessionHistoryStillWorks() {
-            ThinkResponse prevResponse = new ThinkResponse("sess-2", "user-2", 0.01, null, 100, 50,
+            ThinkResponse prevResponse = new ThinkResponse("sess-2", "user-2", 0.01, null, 0.01, 100, 50,
                     null, null,
                     List.of(assistantMsg("sess-2", "user-2", "Prior reply.")),
                     List.of(), true, false, 0, 0, 0.0, TS);

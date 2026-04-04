@@ -37,7 +37,6 @@ public class PipelineConsumer implements Runnable {
             P + "tool-use-result",
             P + "tool-use-all-complete",
             P + "tool-use-latency",
-            P + "session-cost",
             P + "message-output"
     );
 

@@ -37,7 +37,6 @@ class TopicsTest {
         assertThat(Topics.TOOL_USE_DLQ).startsWith(prefix);
         assertThat(Topics.TOOL_USE_RESULT).startsWith(prefix);
         assertThat(Topics.TOOL_USE_ALL_COMPLETE).startsWith(prefix);
-        assertThat(Topics.SESSION_COST).startsWith(prefix);
         assertThat(Topics.TOOL_USE_LATENCY).startsWith(prefix);
         assertThat(Topics.SESSION_END).startsWith(prefix);
         assertThat(Topics.MEMOIR_CONTEXT).startsWith(prefix);
@@ -58,7 +57,6 @@ class TopicsTest {
         assertThat(Topics.TOOL_USE_DLQ).isEqualTo(p + "tool-use-dlq");
         assertThat(Topics.TOOL_USE_RESULT).isEqualTo(p + "tool-use-result");
         assertThat(Topics.TOOL_USE_ALL_COMPLETE).isEqualTo(p + "tool-use-all-complete");
-        assertThat(Topics.SESSION_COST).isEqualTo(p + "session-cost");
         assertThat(Topics.TOOL_USE_LATENCY).isEqualTo(p + "tool-use-latency");
         assertThat(Topics.SESSION_END).isEqualTo(p + "session-end");
         assertThat(Topics.MEMOIR_CONTEXT).isEqualTo(p + "memoir-context");

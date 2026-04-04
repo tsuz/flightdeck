@@ -96,7 +96,7 @@ class EndTurnProcessorTest {
     @DisplayName("endTurn=true with null tool_uses list is forwarded")
     void endTurn_nullToolUses_isForwarded() {
         ThinkResponse response = new ThinkResponse("sess-4", "user-D", 0.01, null,
-                100, 50,
+                0.01, 100, 50,
                 null, null,
                 List.of(assistantMsg("sess-4", "user-D", "Done.")),
                 null, true, false, 0, 0, 0.0, TS);
@@ -122,7 +122,6 @@ class EndTurnProcessorTest {
         assertThat(r.inputTokens()).isEqualTo(200);
         assertThat(r.outputTokens()).isEqualTo(75);
         assertThat(r.cost()).isCloseTo(0.0042, within(0.000001));
-        assertThat(r.llmCalls()).isEqualTo(1);
     }
 
     @Test
@@ -233,11 +232,63 @@ class EndTurnProcessorTest {
     @Test
     @DisplayName("toUserResponse: empty content when ThinkResponse has no messages")
     void toUserResponse_noMessages_emptyContent() {
-        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0.0, 0, 0,
                 null, null, List.of(), List.of(), true, false, 0, 0, 0.0, TS);
 
         UserResponse result = toUserResponse("s", resp);
         assertThat(result.content()).isEmpty();
+    }
+
+    // ── total_session_cost ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("UserResponse.cost carries totalSessionCost (previous + think + compaction)")
+    void totalSessionCost_flowsToUserResponse() {
+        // totalSessionCost = 0.05 (previous) + 0.01 (think) + 0.002 (compaction) = 0.062
+        ThinkResponse resp = new ThinkResponse("sess-t", "user-T",
+                0.062, 0.05, 0.01, 200, 75,
+                null, null,
+                List.of(assistantMsg("sess-t", "user-T", "Answer.")),
+                null, true,
+                true, 100, 20, 0.002, TS);
+
+        thinkInput.pipeInput("sess-t", resp);
+
+        UserResponse r = messageOutput.readRecord().value();
+        assertThat(r.cost()).isCloseTo(0.062, within(0.000001));
+    }
+
+    @Test
+    @DisplayName("UserResponse.cost is null when totalSessionCost is null")
+    void totalSessionCost_null_flowsAsNull() {
+        ThinkResponse resp = new ThinkResponse("sess-n", "user-N",
+                null, null, null, 100, 50,
+                null, null,
+                List.of(assistantMsg("sess-n", "user-N", "Answer.")),
+                null, true,
+                false, 0, 0, 0.0, TS);
+
+        thinkInput.pipeInput("sess-n", resp);
+
+        UserResponse r = messageOutput.readRecord().value();
+        assertThat(r.cost()).isNull();
+    }
+
+    @Test
+    @DisplayName("thinkInputTokens and thinkOutputTokens flow to UserResponse")
+    void thinkTokens_flowToUserResponse() {
+        ThinkResponse resp = new ThinkResponse("sess-tk", "user-TK",
+                0.01, null, 0.01, 350, 120,
+                null, null,
+                List.of(assistantMsg("sess-tk", "user-TK", "Response.")),
+                null, true,
+                false, 0, 0, 0.0, TS);
+
+        thinkInput.pipeInput("sess-tk", resp);
+
+        UserResponse r = messageOutput.readRecord().value();
+        assertThat(r.inputTokens()).isEqualTo(350);
+        assertThat(r.outputTokens()).isEqualTo(120);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -254,14 +305,14 @@ class EndTurnProcessorTest {
                                                   List<MessageInput> messages,
                                                   List<ToolUseItem> tools,
                                                   double cost, int inputTokens, int outputTokens) {
-        return new ThinkResponse(sessionId, userId, cost, null, inputTokens, outputTokens,
+        return new ThinkResponse(sessionId, userId, cost, null, cost, inputTokens, outputTokens,
                 null, null, messages, tools, true, false, 0, 0, 0.0, TS);
     }
 
     private static ThinkResponse midTurnResponse(String sessionId, String userId,
                                                    List<MessageInput> messages,
                                                    List<ToolUseItem> tools) {
-        return new ThinkResponse(sessionId, userId, 0.005, null, 150, 60,
+        return new ThinkResponse(sessionId, userId, 0.005, null, 0.005, 150, 60,
                 null, null, messages, tools, false, false, 0, 0, 0.0, TS);
     }
 

@@ -5,11 +5,9 @@ import io.flightdeck.streams.processors.AggregateToolExecutionResultProcessor;
 import io.flightdeck.streams.processors.EndTurnProcessor;
 import io.flightdeck.streams.processors.EnrichInputMessageProcessor;
 import io.flightdeck.streams.processors.ExtractToolUseItemsProcessor;
-import io.flightdeck.streams.processors.SessionCostAggregationProcessor;
 import io.flightdeck.streams.processors.MemoirSessionEndProcessor;
 import io.flightdeck.streams.processors.SessionEndProcessor;
 import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
-import io.flightdeck.streams.model.SessionCost;
 import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -47,7 +45,7 @@ public class FlightDeckStreamsApp {
 
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
-    static final String SESSION_COST_TABLE_STORE = "session-cost-table-store";
+
 
     public static void main(String[] args) {
         Properties props = buildConfig();
@@ -120,20 +118,9 @@ public class FlightDeckStreamsApp {
                         .withValueSerde(JsonSerde.of(ThinkResponse.class))
         );
 
-        // ── Shared KTable: session-cost (aggregated cost per session) ────────
-        KTable<String, SessionCost> sessionCostTable = builder.table(
-                Topics.SESSION_COST,
-                Consumed.with(Serdes.String(), JsonSerde.of(SessionCost.class)),
-                Materialized.<String, SessionCost>as(
-                                Stores.persistentKeyValueStore(SESSION_COST_TABLE_STORE))
-                        .withKeySerde(Serdes.String())
-                        .withValueSerde(JsonSerde.of(SessionCost.class))
-        );
-
         // ── Register each processor fragment ──────────────────────────────────
-        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, sessionCostTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
-        SessionCostAggregationProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream);
         AggregateToolExecutionResultProcessor.register(builder);
         TransformToolUseDoneProcessor.register(builder);
@@ -169,7 +156,6 @@ public class FlightDeckStreamsApp {
                 Topics.TOOL_USE_DLQ,
                 Topics.TOOL_USE_RESULT,
                 Topics.TOOL_USE_ALL_COMPLETE,
-                Topics.SESSION_COST,
                 Topics.TOOL_USE_LATENCY,
                 Topics.MESSAGE_OUTPUT
         ));

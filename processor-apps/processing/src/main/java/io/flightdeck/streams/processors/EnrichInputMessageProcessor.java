@@ -3,7 +3,6 @@ package io.flightdeck.streams.processors;
 import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.MessageInput;
 import io.flightdeck.streams.model.FullSessionContext;
-import io.flightdeck.streams.model.SessionCost;
 import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -27,13 +26,10 @@ import java.util.List;
  *         │◄──────────────  think-request-response (KTable — previous turn's full state)
  *         │
  *         │   leftJoin
- *         │◄──────────────  session-cost     (KTable — aggregated cost per session)
- *         │
- *         │   leftJoin
  *         │◄──────────────  memoir-context   (KTable — long-term memoir, shared)
  *         │
  *         ▼
- *   enriched-message-input  (KStream — history + cost + memoir + latest input)
+ *   enriched-message-input  (KStream — history + memoir + latest input)
  * </pre>
  *
  * <p>History is reconstructed from the previous ThinkResponse:
@@ -46,12 +42,10 @@ public class EnrichInputMessageProcessor {
     /**
      * @param memoirTable      shared KTable for memoir-context (keyed by userId)
      * @param thinkTable       shared KTable for think-request-response (keyed by sessionId)
-     * @param sessionCostTable shared KTable for session-cost (keyed by sessionId)
      */
     public static void register(StreamsBuilder builder,
                                 KTable<String, String> memoirTable,
-                                KTable<String, ThinkResponse> thinkTable,
-                                KTable<String, SessionCost> sessionCostTable) {
+                                KTable<String, ThinkResponse> thinkTable) {
 
         // ── Left side: incoming user messages ────────────────────────────────
         KStream<String, MessageInput> inputStream = builder.stream(
@@ -72,18 +66,6 @@ public class EnrichInputMessageProcessor {
                                 Serdes.String(),
                                 JsonSerde.of(MessageInput.class),
                                 JsonSerde.of(ThinkResponse.class)
-                        )
-                );
-
-        // ── Join: enriched ⟕ session-cost (attach aggregated cost) ──────────
-        enriched = enriched
-                .leftJoin(
-                        sessionCostTable,
-                        EnrichInputMessageProcessor::enrichWithCost,
-                        Joined.with(
-                                Serdes.String(),
-                                JsonSerde.of(FullSessionContext.class),
-                                JsonSerde.of(SessionCost.class)
                         )
                 );
 
@@ -144,27 +126,11 @@ public class EnrichInputMessageProcessor {
         return new FullSessionContext(
                 message.sessionId(),
                 userId,
-                null,
+                (prevResponse != null) ? prevResponse.totalSessionCost() : null,
                 history,
                 message,
                 null,
                 Instant.now().toString()
-        );
-    }
-
-    /**
-     * Join: attach aggregated session cost from session-cost KTable.
-     */
-    static FullSessionContext enrichWithCost(FullSessionContext enriched, SessionCost sessionCost) {
-        Double cost = (sessionCost != null) ? sessionCost.estimatedCostUsd() : null;
-        return new FullSessionContext(
-                enriched.sessionId(),
-                enriched.userId(),
-                cost,
-                enriched.history(),
-                enriched.latestInput(),
-                enriched.memoirContext(),
-                enriched.timestamp()
         );
     }
 

@@ -187,7 +187,7 @@ public class ThinkConsumer implements AutoCloseable {
                     AppConfig.BUDGET_PRICE_PER_SESSION);
 
             ThinkResponse budgetResponse = new ThinkResponse(
-                    sessionId, userId, null, context.cost(), 0, 0,
+                    sessionId, userId, context.cost(), context.cost(), null, 0, 0,
                     context.history(),
                     context.latestInput(),
                     List.of(new MessageInput(sessionId, userId, "assistant", budgetMessage,
@@ -249,18 +249,18 @@ public class ThinkConsumer implements AutoCloseable {
 
                         log.info("[{}] Compaction LLM response: input_tokens={} output_tokens={} cost={} lastInputResponse={}",
                                 sessionId,
-                                summaryResponse.inputTokens(),
-                                summaryResponse.outputTokens(),
-                                summaryResponse.cost() != null ? String.format("$%.6f", summaryResponse.cost()) : "null",
+                                summaryResponse.thinkInputTokens(),
+                                summaryResponse.thinkOutputTokens(),
+                                summaryResponse.thinkCost() != null ? String.format("$%.6f", summaryResponse.thinkCost()) : "null",
                                 summaryResponse.lastInputResponse() != null
                                         ? mapper.writeValueAsString(summaryResponse.lastInputResponse())
                                         : "null");
 
                         // Capture compaction metrics
                         compacted = true;
-                        compactionInputTokens = summaryResponse.inputTokens();
-                        compactionOutputTokens = summaryResponse.outputTokens();
-                        compactionCost = summaryResponse.cost() != null ? summaryResponse.cost() : 0.0;
+                        compactionInputTokens = summaryResponse.thinkInputTokens();
+                        compactionOutputTokens = summaryResponse.thinkOutputTokens();
+                        compactionCost = summaryResponse.thinkCost() != null ? summaryResponse.thinkCost() : 0.0;
 
                         String summaryText = extractTextFromMessages(
                                 summaryResponse.lastInputResponse());
@@ -297,14 +297,19 @@ public class ThinkConsumer implements AutoCloseable {
 
         // 7. Build final ThinkResponse
         Double prevSessionCost = context.cost();
+        Double thinkCost = thinkResponse.thinkCost();
+        Double totalSessionCost = (prevSessionCost != null ? prevSessionCost : 0.0)
+                + (thinkCost != null ? thinkCost : 0.0)
+                + compactionCost;
 
         thinkResponse = new ThinkResponse(
                 sessionId,
                 userId,
-                thinkResponse.cost(),
+                totalSessionCost,
                 prevSessionCost,
-                thinkResponse.inputTokens(),
-                thinkResponse.outputTokens(),
+                thinkCost,
+                thinkResponse.thinkInputTokens(),
+                thinkResponse.thinkOutputTokens(),
                 effectiveHistory,
                 context.latestInput(),
                 thinkResponse.lastInputResponse(),
@@ -389,7 +394,7 @@ public class ThinkConsumer implements AutoCloseable {
     static ThinkResponse buildErrorResponse(String sessionId, String userId, Exception e) {
         String errorMessage = "Sorry, an error occurred while processing your request: " + e.getMessage();
         return new ThinkResponse(
-                sessionId, userId, null, null, 0, 0,
+                sessionId, userId, null, null, null, 0, 0,
                 null, null,
                 List.of(new MessageInput(sessionId, userId, "assistant", errorMessage,
                         java.time.Instant.now().toString(), null)),

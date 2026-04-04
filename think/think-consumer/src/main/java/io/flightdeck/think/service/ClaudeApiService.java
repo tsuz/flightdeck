@@ -277,8 +277,9 @@ public class ClaudeApiService implements LlmApiService {
             return new ThinkResponse(
                     sessionId,
                     userId,
-                    cost,
-                    null,   // prevSessionCost — set by ThinkConsumer
+                    null,   // totalSessionCost — set by ThinkConsumer
+                    null,   // previousSessionCost — set by ThinkConsumer
+                    cost,   // thinkCost
                     inputTokens,
                     outputTokens,
                     null,   // previousMessages — set by ThinkConsumer

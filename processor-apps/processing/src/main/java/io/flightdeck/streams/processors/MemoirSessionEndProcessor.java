@@ -106,8 +106,8 @@ public class MemoirSessionEndProcessor {
         if (think.lastInputResponse() != null) fullHistory.addAll(think.lastInputResponse());
 
         ThinkResponse asResponse = new ThinkResponse(
-                think.sessionId(), think.userId(), think.cost(), think.prevSessionCost(),
-                0, 0,
+                think.sessionId(), think.userId(), think.totalSessionCost(), think.previousSessionCost(),
+                think.thinkCost(), 0, 0,
                 fullHistory,     // previousMessages = full history for memoir
                 null, null,      // lastInputMessage, lastInputResponse not needed for memoir
                 null, true, false, 0, 0, 0.0, Instant.now().toString());

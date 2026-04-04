@@ -71,7 +71,7 @@ public final class AppConfig {
     public static final int COMPACTION_USER_MESSAGE_TRIGGER;
 
     static {
-        int raw = Integer.parseInt(env("COMPACTION_USER_MESSAGE_TRIGGER", "-1"));
+        int raw = Integer.parseInt(env("COMPACTION_USER_MESSAGE_TRIGGER", "16"));
         if (raw > 0 && raw < 2) {
             throw new IllegalStateException(
                     "COMPACTION_USER_MESSAGE_TRIGGER must be >= 2 or -1 (disabled), got: " + raw);
@@ -80,7 +80,7 @@ public final class AppConfig {
     }
 
     public static final int COMPACTION_USER_MESSAGE_UNTIL =
-            Integer.parseInt(env("COMPACTION_USER_MESSAGE_UNTIL", "2"));
+            Integer.parseInt(env("COMPACTION_USER_MESSAGE_UNTIL", "8"));
 
     public static final String COMPACTION_PROMPT = env("COMPACTION_PROMPT",
             "Summarize the following conversation concisely. " +

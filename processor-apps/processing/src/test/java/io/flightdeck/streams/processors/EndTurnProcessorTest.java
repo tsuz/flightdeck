@@ -99,7 +99,7 @@ class EndTurnProcessorTest {
                 100, 50,
                 null, null,
                 List.of(assistantMsg("sess-4", "user-D", "Done.")),
-                null, true, TS);
+                null, true, false, 0, 0, 0.0, TS);
 
         thinkInput.pipeInput("sess-4", response);
 
@@ -234,7 +234,7 @@ class EndTurnProcessorTest {
     @DisplayName("toUserResponse: empty content when ThinkResponse has no messages")
     void toUserResponse_noMessages_emptyContent() {
         ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
-                null, null, List.of(), List.of(), true, TS);
+                null, null, List.of(), List.of(), true, false, 0, 0, 0.0, TS);
 
         UserResponse result = toUserResponse("s", resp);
         assertThat(result.content()).isEmpty();
@@ -255,14 +255,14 @@ class EndTurnProcessorTest {
                                                   List<ToolUseItem> tools,
                                                   double cost, int inputTokens, int outputTokens) {
         return new ThinkResponse(sessionId, userId, cost, null, inputTokens, outputTokens,
-                null, null, messages, tools, true, TS);
+                null, null, messages, tools, true, false, 0, 0, 0.0, TS);
     }
 
     private static ThinkResponse midTurnResponse(String sessionId, String userId,
                                                    List<MessageInput> messages,
                                                    List<ToolUseItem> tools) {
         return new ThinkResponse(sessionId, userId, 0.005, null, 150, 60,
-                null, null, messages, tools, false, TS);
+                null, null, messages, tools, false, false, 0, 0, 0.0, TS);
     }
 
     private static MessageInput assistantMsg(String sessionId, String userId, String content) {

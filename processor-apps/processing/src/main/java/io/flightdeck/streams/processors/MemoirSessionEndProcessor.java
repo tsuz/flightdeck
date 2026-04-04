@@ -110,7 +110,7 @@ public class MemoirSessionEndProcessor {
                 0, 0,
                 fullHistory,     // previousMessages = full history for memoir
                 null, null,      // lastInputMessage, lastInputResponse not needed for memoir
-                null, true, Instant.now().toString());
+                null, true, false, 0, 0, 0.0, Instant.now().toString());
 
         return new MemoirSessionEnd(
                 think.sessionId(),

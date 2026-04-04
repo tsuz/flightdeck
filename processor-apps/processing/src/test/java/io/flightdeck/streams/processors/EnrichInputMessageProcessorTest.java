@@ -115,7 +115,7 @@ class EnrichInputMessageProcessorTest {
                 List.of(assistantMsg("sess-h", "user-A", "First reply.")),
                 userMsg("sess-h", "user-A", "Second question"),
                 List.of(assistantMsg("sess-h", "user-A", "Second reply.")),
-                List.of(), true, TS);
+                List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-h", prevResponse);
 
         // Now a new user message arrives
@@ -136,7 +136,7 @@ class EnrichInputMessageProcessorTest {
         ThinkResponse prevResponse = new ThinkResponse("sess-li", "u", 0.01, null, 100, 50,
                 null, null,
                 List.of(assistantMsg("sess-li", "u", "Prior turn.")),
-                List.of(), true, TS);
+                List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-li", prevResponse);
 
         messageInput.pipeInput("sess-li", userMsg("sess-li", "u", "New question"));
@@ -164,7 +164,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("userId is taken from the incoming message when present")
     void userId_fromMessage() {
         ThinkResponse prevResponse = new ThinkResponse("sess-u1", "old-user", 0.01, null, 100, 50,
-                null, null, null, List.of(), true, TS);
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-u1", prevResponse);
         messageInput.pipeInput("sess-u1", userMsg("sess-u1", "new-user", "hi"));
 
@@ -175,7 +175,7 @@ class EnrichInputMessageProcessorTest {
     @DisplayName("userId falls back to ThinkResponse value when message carries none")
     void userId_fallsBackToThinkResponse() {
         ThinkResponse prevResponse = new ThinkResponse("sess-u2", "ctx-user", 0.01, null, 100, 50,
-                null, null, null, List.of(), true, TS);
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("sess-u2", prevResponse);
         // Message has null userId (e.g. scheduler-triggered input)
         MessageInput schedulerMsg = new MessageInput("sess-u2", null, "user",
@@ -203,11 +203,11 @@ class EnrichInputMessageProcessorTest {
                 List.of(assistantMsg("A", "u1", "a1")),
                 null,
                 List.of(assistantMsg("A", "u1", "a2")),
-                List.of(), true, TS);
+                List.of(), true, false, 0, 0, 0.0, TS);
         ThinkResponse respB = new ThinkResponse("B", "u2", 0.01, null, 100, 50,
                 null, null,
                 List.of(assistantMsg("B", "u2", "b1")),
-                List.of(), true, TS);
+                List.of(), true, false, 0, 0, 0.0, TS);
         thinkInput.pipeInput("A", respA);
         thinkInput.pipeInput("B", respB);
 
@@ -243,7 +243,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_thinkResponseWithNullFields() {
         MessageInput msg = userMsg("s", "u", "hello");
         ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
-                null, null, null, List.of(), true, TS);
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
         assertThat(result.history()).isEmpty();
     }
@@ -256,7 +256,7 @@ class EnrichInputMessageProcessorTest {
         MessageInput inputMsg = userMsg("s", "u", "question");
         MessageInput response = assistantMsg("s", "u", "answer");
         ThinkResponse resp = new ThinkResponse("s", "u", 0.01, null, 100, 50,
-                List.of(prior), inputMsg, List.of(response), List.of(), true, TS);
+                List.of(prior), inputMsg, List.of(response), List.of(), true, false, 0, 0, 0.0, TS);
         FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
         assertThat(result.history()).containsExactly(prior, inputMsg, response);
         assertThat(result.latestInput()).isEqualTo(msg);
@@ -267,7 +267,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_userIdFromMessage() {
         MessageInput msg = userMsg("s", "msg-user", "hi");
         ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
-                null, null, null, List.of(), true, TS);
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("msg-user");
     }
 
@@ -276,7 +276,7 @@ class EnrichInputMessageProcessorTest {
     void enrich_userIdFallback() {
         MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
         ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
-                null, null, null, List.of(), true, TS);
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("ctx-user");
     }
 

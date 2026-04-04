@@ -97,6 +97,61 @@ public class GeminiApiService implements LlmApiService {
         }
     }
 
+    @Override
+    public ThinkResponse callWithoutTools(String systemPrompt,
+                                          List<Map<String, Object>> messages,
+                                          String sessionId,
+                                          String userId) {
+        try {
+            // Pack the entire conversation into a single user message.
+            // Sending as multi-turn chat causes Gemini to return empty
+            // (it thinks the model turn is already complete).
+            StringBuilder conversationText = new StringBuilder();
+            for (Map<String, Object> msg : messages) {
+                String role = String.valueOf(msg.getOrDefault("role", "user"));
+                String text = String.valueOf(msg.getOrDefault("content", ""));
+                conversationText.append(role.toUpperCase()).append(": ").append(text).append("\n\n");
+            }
+            List<Map<String, Object>> contents = List.of(
+                    Map.of("role", "user",
+                            "parts", List.of(Map.of("text", conversationText.toString()))));
+
+            Map<String, Object> requestBody = new LinkedHashMap<>();
+            requestBody.put("system_instruction", Map.of(
+                    "parts", List.of(Map.of("text", systemPrompt))));
+            requestBody.put("contents", contents);
+            requestBody.put("generationConfig", Map.of("maxOutputTokens", maxTokens));
+
+            String body = mapper.writeValueAsString(requestBody);
+            String url = String.format("%s/models/%s:generateContent?key=%s",
+                    apiBaseUrl, model, apiKey);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .timeout(Duration.ofSeconds(120))
+                    .build();
+
+            log.info("[{}] Compaction Gemini raw request:\n{}", sessionId, body);
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            log.info("[{}] Compaction Gemini raw response (status={}):\n{}", sessionId, response.statusCode(), response.body());
+
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Gemini API error: HTTP " + response.statusCode());
+            }
+
+            return parseResponse(response.body(), sessionId, userId);
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Gemini API call (no tools) failed for session " + sessionId, e);
+        }
+    }
+
     private Map<String, Object> buildRequestBody(String systemPrompt, List<Map<String, Object>> contents) {
         Map<String, Object> body = new LinkedHashMap<>();
 
@@ -244,6 +299,7 @@ public class GeminiApiService implements LlmApiService {
                     responseMessages,  // lastInputResponse
                     toolUses.isEmpty() ? null : toolUses,
                     endTurn,
+                    false, 0, 0, 0.0,  // compaction fields — set by ThinkConsumer
                     Instant.now().toString()
             );
 

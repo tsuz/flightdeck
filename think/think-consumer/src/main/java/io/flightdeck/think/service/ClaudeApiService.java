@@ -112,6 +112,48 @@ public class ClaudeApiService implements LlmApiService {
         }
     }
 
+    @Override
+    public ThinkResponse callWithoutTools(String systemPrompt,
+                                          List<Map<String, Object>> messages,
+                                          String sessionId,
+                                          String userId) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("max_tokens", maxTokens);
+            body.put("system", systemPrompt);
+            body.put("messages", messages);
+            // No tools
+
+            String requestBody = mapper.writeValueAsString(body);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
+                    .header("Content-Type", "application/json")
+                    .header("x-api-key", apiKey)
+                    .header("anthropic-version", "2023-06-01")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(120))
+                    .build();
+
+            log.info("[{}] Calling Claude API (no tools): model={} messages={}", sessionId, model, messages.size());
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("[{}] Claude API returned status {}: {}", sessionId, response.statusCode(), response.body());
+                throw new RuntimeException("Claude API error: HTTP " + response.statusCode());
+            }
+
+            return parseResponse(response.body(), sessionId, userId);
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Claude API call (no tools) failed for session " + sessionId, e);
+        }
+    }
+
     private Map<String, Object> buildRequestBody(String systemPrompt, List<Map<String, Object>> messages) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -235,6 +277,7 @@ public class ClaudeApiService implements LlmApiService {
                     responseMessages,  // lastInputResponse
                     toolUses.isEmpty() ? null : toolUses,
                     endTurn,
+                    false, 0, 0, 0.0,  // compaction fields — set by ThinkConsumer
                     Instant.now().toString()
             );
 

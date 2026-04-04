@@ -107,10 +107,10 @@ class CompactionTest {
                 SESSION, USER, 0.002, null, 80, 40,
                 null, null,
                 List.of(assistantMsg("User searched flights to NYC. Found AA123, UA456, DL789.")),
-                null, true, TS);
-        when(mockLlm.call(
+                null, true, false, 0, 0, 0.0, TS);
+        when(mockLlm.callWithoutTools(
                 eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
-                eq(oldApiMessages),
+                anyList(),
                 eq(SESSION),
                 eq(USER)))
                 .thenReturn(summaryResponse);
@@ -126,7 +126,7 @@ class CompactionTest {
                 SESSION, USER, 0.01, null, 200, 100,
                 null, null,
                 List.of(assistantMsg("You're welcome!")),
-                null, true, TS);
+                null, true, false, 0, 0, 0.0, TS);
         when(mockLlm.call(anyString(), eq(mainApiMessages), eq(SESSION), eq(USER)))
                 .thenReturn(mainResponse);
 
@@ -137,21 +137,15 @@ class CompactionTest {
         thinkConsumer.processRecord(record);
 
         // --- Verify ---
-        verify(mockLlm, times(2)).call(anyString(), anyList(), eq(SESSION), eq(USER));
+        verify(mockLlm, times(1)).callWithoutTools(anyString(), anyList(), eq(SESSION), eq(USER));
+        verify(mockLlm, times(1)).call(anyString(), anyList(), eq(SESSION), eq(USER));
 
-        // The compaction call received all 4 old messages (user + tool_use + tool_result + assistant)
+        // Compaction uses toPlainTextMessages (not toApiMessages), so toApiMessages is called once for main
         ArgumentCaptor<List<MessageInput>> historyCaptor = ArgumentCaptor.forClass(List.class);
-        verify(mockLlm, times(2)).toApiMessages(historyCaptor.capture(), any());
-        List<MessageInput> compactionInput = historyCaptor.getAllValues().get(0);
-        assertThat(compactionInput).hasSize(4);
-        assertThat(compactionInput.get(0).role()).isEqualTo("user");
-        assertThat(compactionInput.get(1).role()).isEqualTo("assistant");
-        assertThat(compactionInput.get(1).content()).isInstanceOf(List.class); // tool_use block
-        assertThat(compactionInput.get(2).role()).isEqualTo("tool");           // tool result
-        assertThat(compactionInput.get(3).role()).isEqualTo("assistant");
+        verify(mockLlm, times(1)).toApiMessages(historyCaptor.capture(), any());
 
         // The main call received compacted history (summary + 4 kept messages)
-        List<MessageInput> mainInput = historyCaptor.getAllValues().get(1);
+        List<MessageInput> mainInput = historyCaptor.getAllValues().get(0);
         assertThat(mainInput).hasSize(5);
         assertThat(mainInput.get(0).contentAsString()).startsWith("[Conversation Summary]");
         assertThat(mainInput.get(1).contentAsString()).isEqualTo("Book the cheapest");
@@ -189,7 +183,7 @@ class CompactionTest {
                 SESSION, USER, 0.01, null, 100, 50,
                 null, null,
                 List.of(assistantMsg("Nice!")),
-                null, true, TS);
+                null, true, false, 0, 0, 0.0, TS);
         when(mockLlm.call(anyString(), eq(apiMessages), eq(SESSION), eq(USER)))
                 .thenReturn(mainResponse);
 
@@ -248,7 +242,7 @@ class CompactionTest {
                 SESSION, USER, 0.01, null, 100, 50,
                 null, null,
                 List.of(assistantMsg("Here are the results.")),
-                null, true, TS);
+                null, true, false, 0, 0, 0.0, TS);
         when(mockLlm.call(anyString(), eq(apiMessages), eq(SESSION), eq(USER)))
                 .thenReturn(mainResponse);
 
@@ -305,14 +299,14 @@ class CompactionTest {
                 Map.of("role", "user", "content", "Hi,"),
                 Map.of("role", "assistant", "content", "Hello!..."));
         when(mockLlm.toApiMessages(expectedOld, null)).thenReturn(oldApiMsgs);
-        when(mockLlm.call(
+        when(mockLlm.callWithoutTools(
                 eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
-                eq(oldApiMsgs), eq(sessionId), eq(userId)))
+                anyList(), eq(sessionId), eq(userId)))
                 .thenReturn(new ThinkResponse(sessionId, userId, 0.001, null, 20, 15,
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "User greeted the Kafka assistant.", TS, null)),
-                        null, true, TS));
+                        null, true, false, 0, 0, 0.0, TS));
 
         // Mock: main LLM call with compacted history (summary + 8 kept = 9) + latestInput
         List<Map<String, Object>> mainApiMsgs = List.of(Map.of("role", "user", "content", "main"));
@@ -322,22 +316,23 @@ class CompactionTest {
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "think-consumer-group has 0 lag.", TS, null)),
-                        null, true, TS));
+                        null, true, false, 0, 0, 0.0, TS));
 
         thinkConsumer.processRecord(new ConsumerRecord<>(
                 "test-enriched-message-input", 0, 0, sessionId,
                 mapper.writeValueAsString(context)));
 
-        // --- Verify: 2 LLM calls (compaction + main) ---
-        verify(mockLlm, times(2)).call(anyString(), anyList(), eq(sessionId), eq(userId));
+        // --- Verify: compaction (callWithoutTools) + main (call) ---
+        verify(mockLlm, times(1)).callWithoutTools(anyString(), anyList(), eq(sessionId), eq(userId));
+        verify(mockLlm, times(1)).call(anyString(), anyList(), eq(sessionId), eq(userId));
 
         // Compaction call got the old portion (2 messages)
+        // Compaction uses toPlainTextMessages, so toApiMessages called once for main
         ArgumentCaptor<List<MessageInput>> historyCaptor = ArgumentCaptor.forClass(List.class);
-        verify(mockLlm, times(2)).toApiMessages(historyCaptor.capture(), any());
-        assertThat(historyCaptor.getAllValues().get(0)).hasSize(2);
+        verify(mockLlm, times(1)).toApiMessages(historyCaptor.capture(), any());
 
         // Main call got compacted history: summary + 8 kept messages = 9
-        List<MessageInput> mainInput = historyCaptor.getAllValues().get(1);
+        List<MessageInput> mainInput = historyCaptor.getAllValues().get(0);
         assertThat(mainInput).hasSize(9);
         assertThat(mainInput.get(0).contentAsString()).startsWith("[Conversation Summary]");
         // Kept portion starts with "list topics" user msg and includes tool interactions
@@ -383,7 +378,7 @@ class CompactionTest {
                         null, null,
                         List.of(new MessageInput(sessionId, userId, "assistant",
                                 "The group has 0 lag.", TS, null)),
-                        null, true, TS));
+                        null, true, false, 0, 0, 0.0, TS));
 
         thinkConsumer.processRecord(new ConsumerRecord<>(
                 "test-enriched-message-input", 0, 0, sessionId,
@@ -418,11 +413,11 @@ class CompactionTest {
         // Mock compaction call
         when(mockLlm.toApiMessages(history.subList(0, 2), null))
                 .thenReturn(List.of(Map.of("role", "user", "content", "msg1")));
-        when(mockLlm.call(eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
+        when(mockLlm.callWithoutTools(eq(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT),
                 anyList(), eq(SESSION), eq(USER)))
                 .thenReturn(new ThinkResponse(SESSION, USER, 0.0, null, 10, 10,
                         null, null,
-                        List.of(assistantMsg("summary")), null, true, TS));
+                        List.of(assistantMsg("summary")), null, true, false, 0, 0, 0.0, TS));
 
         // Mock main call
         when(mockLlm.toApiMessages(anyList(), eq(latestInput)))
@@ -430,27 +425,24 @@ class CompactionTest {
         when(mockLlm.call(anyString(), anyList(), eq(SESSION), eq(USER)))
                 .thenReturn(new ThinkResponse(SESSION, USER, 0.01, null, 50, 50,
                         null, null,
-                        List.of(assistantMsg("done")), null, true, TS));
+                        List.of(assistantMsg("done")), null, true, false, 0, 0, 0.0, TS));
 
         thinkConsumer.processRecord(new ConsumerRecord<>(
                 "test-enriched-message-input", 0, 0, SESSION,
                 mapper.writeValueAsString(context)));
 
-        // Capture both LLM calls
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(mockLlm, times(2)).call(promptCaptor.capture(), anyList(), eq(SESSION), eq(USER));
-
-        String compactionCallPrompt = promptCaptor.getAllValues().get(0);
-        String mainCallPrompt = promptCaptor.getAllValues().get(1);
-
-        // The compaction call uses exactly COMPACTION_PROMPT (controlled via env var)
-        assertThat(compactionCallPrompt)
+        // Verify compaction used callWithoutTools with COMPACTION_PROMPT
+        ArgumentCaptor<String> compactionPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockLlm).callWithoutTools(compactionPromptCaptor.capture(), anyList(), eq(SESSION), eq(USER));
+        assertThat(compactionPromptCaptor.getValue())
                 .isEqualTo(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT);
-        assertThat(compactionCallPrompt)
+        assertThat(compactionPromptCaptor.getValue())
                 .contains("Summarize the following conversation");
 
-        // The main call uses the system prompt, NOT the compaction prompt
-        assertThat(mainCallPrompt)
+        // Verify main call used call() with the system prompt (not compaction prompt)
+        ArgumentCaptor<String> mainPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockLlm).call(mainPromptCaptor.capture(), anyList(), eq(SESSION), eq(USER));
+        assertThat(mainPromptCaptor.getValue())
                 .isNotEqualTo(io.flightdeck.think.config.AppConfig.COMPACTION_PROMPT);
     }
 

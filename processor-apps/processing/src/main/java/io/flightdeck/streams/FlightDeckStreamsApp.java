@@ -194,7 +194,18 @@ public class FlightDeckStreamsApp {
                 log.info("Creating {} missing topics: {}",
                         toCreate.size(),
                         toCreate.stream().map(NewTopic::name).toList());
-                admin.createTopics(toCreate).all().get(30, TimeUnit.SECONDS);
+                var results = admin.createTopics(toCreate).values();
+                for (var entry : results.entrySet()) {
+                    try {
+                        entry.getValue().get(30, TimeUnit.SECONDS);
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        if (e.getCause() instanceof org.apache.kafka.common.errors.TopicExistsException) {
+                            log.debug("Topic {} already exists — skipping", entry.getKey());
+                        } else {
+                            throw e;
+                        }
+                    }
+                }
             }
 
             log.info("All {} required topics verified", requiredTopics.size());

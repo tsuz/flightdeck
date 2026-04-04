@@ -160,7 +160,7 @@ class MemoirEnabledTopologyTest {
             ThinkResponse prevResponse = new ThinkResponse("sess-2", "user-2", 0.01, null, 100, 50,
                     null, null,
                     List.of(assistantMsg("sess-2", "user-2", "Prior reply.")),
-                    List.of(), true, TS);
+                    List.of(), true, false, 0, 0, 0.0, TS);
             thinkInput.pipeInput("sess-2", prevResponse);
 
             messageInput.pipeInput("sess-2", userMsg("sess-2", "user-2", "Follow-up"));

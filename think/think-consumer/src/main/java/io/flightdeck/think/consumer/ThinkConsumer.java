@@ -192,7 +192,9 @@ public class ThinkConsumer implements AutoCloseable {
                     context.latestInput(),
                     List.of(new MessageInput(sessionId, userId, "assistant", budgetMessage,
                             java.time.Instant.now().toString(), null)),
-                    null, true, java.time.Instant.now().toString());
+                    null, true,
+                    false, 0, 0, 0.0,
+                    java.time.Instant.now().toString());
 
             produceResponse(sessionId, budgetResponse);
             return;
@@ -200,6 +202,10 @@ public class ThinkConsumer implements AutoCloseable {
 
         // 3. Compact history if user message count exceeds trigger
         List<MessageInput> effectiveHistory = context.history();
+        boolean compacted = false;
+        int compactionInputTokens = 0;
+        int compactionOutputTokens = 0;
+        double compactionCost = 0.0;
 
         if (AppConfig.COMPACTION_USER_MESSAGE_TRIGGER > 0
                 && effectiveHistory != null) {
@@ -226,27 +232,54 @@ public class ThinkConsumer implements AutoCloseable {
                         List<MessageInput> recentMessages = effectiveHistory.subList(
                                 splitIndex, effectiveHistory.size());
 
-                        // Summarize old messages via LLM
+                        // Convert old messages to plain text for summarization
+                        // (no function calls/responses — LLM needs readable text only)
                         List<Map<String, Object>> summaryInput =
-                                llmApiService.toApiMessages(oldMessages, null);
-                        ThinkResponse summaryResponse = llmApiService.call(
+                                toPlainTextMessages(oldMessages);
+
+                        log.info("[{}] Compaction LLM request: system_prompt={} messages={}",
+                                sessionId,
+                                AppConfig.COMPACTION_PROMPT.length() > 80
+                                        ? AppConfig.COMPACTION_PROMPT.substring(0, 80) + "..."
+                                        : AppConfig.COMPACTION_PROMPT,
+                                mapper.writeValueAsString(summaryInput));
+
+                        ThinkResponse summaryResponse = llmApiService.callWithoutTools(
                                 AppConfig.COMPACTION_PROMPT, summaryInput, sessionId, userId);
+
+                        log.info("[{}] Compaction LLM response: input_tokens={} output_tokens={} cost={} lastInputResponse={}",
+                                sessionId,
+                                summaryResponse.inputTokens(),
+                                summaryResponse.outputTokens(),
+                                summaryResponse.cost() != null ? String.format("$%.6f", summaryResponse.cost()) : "null",
+                                summaryResponse.lastInputResponse() != null
+                                        ? mapper.writeValueAsString(summaryResponse.lastInputResponse())
+                                        : "null");
+
+                        // Capture compaction metrics
+                        compacted = true;
+                        compactionInputTokens = summaryResponse.inputTokens();
+                        compactionOutputTokens = summaryResponse.outputTokens();
+                        compactionCost = summaryResponse.cost() != null ? summaryResponse.cost() : 0.0;
 
                         String summaryText = extractTextFromMessages(
                                 summaryResponse.lastInputResponse());
+
+                        log.info("[{}] Compaction summary text: {}", sessionId, summaryText);
 
                         MessageInput summaryMsg = new MessageInput(
                                 sessionId, userId, "assistant",
                                 "[Conversation Summary]\n" + summaryText,
                                 java.time.Instant.now().toString(), null);
 
-                        List<MessageInput> compacted = new ArrayList<>();
-                        compacted.add(summaryMsg);
-                        compacted.addAll(recentMessages);
-                        effectiveHistory = compacted;
+                        List<MessageInput> compactedList = new ArrayList<>();
+                        compactedList.add(summaryMsg);
+                        compactedList.addAll(recentMessages);
+                        effectiveHistory = compactedList;
 
-                        log.info("[{}] History compacted: {} messages → {}",
-                                sessionId, context.history().size(), effectiveHistory.size());
+                        log.info("[{}] History compacted: {} messages → {} (compaction_cost=${})",
+                                sessionId, context.history().size(), effectiveHistory.size(),
+                                String.format("%.6f", compactionCost));
                     }
                 }
             }
@@ -262,7 +295,7 @@ public class ThinkConsumer implements AutoCloseable {
         // 6. Call LLM API
         ThinkResponse thinkResponse = llmApiService.call(systemPrompt, llmMessages, sessionId, userId);
 
-        // 7. Build final ThinkResponse with previousMessages, lastInputMessage, lastInputResponse
+        // 7. Build final ThinkResponse
         Double prevSessionCost = context.cost();
 
         thinkResponse = new ThinkResponse(
@@ -272,19 +305,24 @@ public class ThinkConsumer implements AutoCloseable {
                 prevSessionCost,
                 thinkResponse.inputTokens(),
                 thinkResponse.outputTokens(),
-                effectiveHistory,                           // previousMessages
-                context.latestInput(),                      // lastInputMessage
-                thinkResponse.lastInputResponse(),          // lastInputResponse (from LLM service)
+                effectiveHistory,
+                context.latestInput(),
+                thinkResponse.lastInputResponse(),
                 thinkResponse.toolUses(),
                 thinkResponse.endTurn(),
+                compacted,
+                compactionInputTokens,
+                compactionOutputTokens,
+                compactionCost,
                 thinkResponse.timestamp());
 
         // 8. Produce to think-request-response
-        log.info("[{}] Producing ThinkResponse: previousMessages={} lastInputMessage={} lastInputResponse={}",
+        log.info("[{}] Producing ThinkResponse: previousMessages={} lastInputMessage={} lastInputResponse={} compaction={}",
                 sessionId,
                 thinkResponse.previousMessages() != null ? thinkResponse.previousMessages().size() : 0,
                 thinkResponse.lastInputMessage() != null ? thinkResponse.lastInputMessage().role() : "null",
-                thinkResponse.lastInputResponse() != null ? thinkResponse.lastInputResponse().size() : 0);
+                thinkResponse.lastInputResponse() != null ? thinkResponse.lastInputResponse().size() : 0,
+                compacted);
 
         produceResponse(sessionId, thinkResponse);
     }
@@ -355,7 +393,63 @@ public class ThinkConsumer implements AutoCloseable {
                 null, null,
                 List.of(new MessageInput(sessionId, userId, "assistant", errorMessage,
                         java.time.Instant.now().toString(), null)),
-                null, true, java.time.Instant.now().toString());
+                null, true,
+                false, 0, 0, 0.0,
+                java.time.Instant.now().toString());
+    }
+
+    /**
+     * Converts message history to plain text user/assistant messages for compaction.
+     * Tool interactions are flattened to readable text so the LLM can summarize them
+     * without needing function call/response structures.
+     */
+    static List<Map<String, Object>> toPlainTextMessages(List<MessageInput> messages) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MessageInput msg : messages) {
+            String role = msg.role();
+            String text;
+
+            if (msg.content() instanceof String s) {
+                text = s;
+            } else if (msg.content() instanceof List<?> blocks) {
+                // Structured content — extract text from blocks
+                StringBuilder sb = new StringBuilder();
+                for (Object block : blocks) {
+                    if (block instanceof Map<?, ?> m) {
+                        if ("text".equals(m.get("type"))) {
+                            sb.append(m.get("text"));
+                        } else if ("tool_use".equals(m.get("type"))) {
+                            sb.append("[Called tool: ").append(m.get("name")).append("]");
+                        } else if (m.containsKey("tool_use_id")) {
+                            // Tool result
+                            Object resultObj = m.get("result");
+                            if (resultObj == null) resultObj = m.get("content");
+                            sb.append("[Tool result: ").append(resultObj).append("]");
+                        }
+                    }
+                }
+                text = sb.toString();
+            } else {
+                text = String.valueOf(msg.content());
+            }
+
+            if (text == null || text.isBlank()) continue;
+
+            // Map roles: user stays user, assistant/tool become assistant
+            String mappedRole = "user".equals(role) ? "user" : "assistant";
+
+            // Merge consecutive same-role messages
+            if (!result.isEmpty() && mappedRole.equals(result.get(result.size() - 1).get("role"))) {
+                Map<String, Object> last = result.get(result.size() - 1);
+                last.put("content", last.get("content") + "\n" + text);
+            } else {
+                Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                entry.put("role", mappedRole);
+                entry.put("content", text);
+                result.add(entry);
+            }
+        }
+        return result;
     }
 
     /**

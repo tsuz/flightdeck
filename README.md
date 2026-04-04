@@ -18,7 +18,7 @@ AI Agent framework that manages state, session context, and takes care of the in
 - Dashboard to track execution, decisions, and latency
 - High performance using stream processing
 - Scalable and fault tolerant (message replay)
-- Past message compaction
+- Previous message compaction
 
 #### Coming Soon.
 

@@ -96,7 +96,7 @@ services:
         condition: service_healthy
 
   think-consumer:
-    build: ../../think/think-consumer
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
     volumes:
       - ./tools.json:/app/tools.json:ro
       - ./system-prompt.txt:/app/system-prompt.txt:ro

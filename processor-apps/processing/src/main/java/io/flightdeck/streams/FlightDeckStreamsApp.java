@@ -1,7 +1,6 @@
 package io.flightdeck.streams;
 
 import io.flightdeck.streams.config.Topics;
-import io.flightdeck.streams.processors.AccumulateSessionContextProcessor;
 import io.flightdeck.streams.processors.AggregateToolExecutionResultProcessor;
 import io.flightdeck.streams.processors.EndTurnProcessor;
 import io.flightdeck.streams.processors.EnrichInputMessageProcessor;
@@ -10,7 +9,6 @@ import io.flightdeck.streams.processors.SessionCostAggregationProcessor;
 import io.flightdeck.streams.processors.MemoirSessionEndProcessor;
 import io.flightdeck.streams.processors.SessionEndProcessor;
 import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
-import io.flightdeck.streams.model.SessionContext;
 import io.flightdeck.streams.model.SessionCost;
 import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
@@ -49,7 +47,6 @@ public class FlightDeckStreamsApp {
 
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
-    static final String SESSION_CONTEXT_STORE = "session-context-store";
     static final String SESSION_COST_TABLE_STORE = "session-cost-table-store";
 
     public static void main(String[] args) {
@@ -123,16 +120,6 @@ public class FlightDeckStreamsApp {
                         .withValueSerde(JsonSerde.of(ThinkResponse.class))
         );
 
-        // ── Shared KTable: session-context (used by Enrich + Memoir processors) ─
-        KTable<String, SessionContext> sessionContextTable = builder.table(
-                Topics.SESSION_CONTEXT,
-                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)),
-                Materialized.<String, SessionContext>as(
-                                Stores.persistentKeyValueStore(SESSION_CONTEXT_STORE))
-                        .withKeySerde(Serdes.String())
-                        .withValueSerde(JsonSerde.of(SessionContext.class))
-        );
-
         // ── Shared KTable: session-cost (aggregated cost per session) ────────
         KTable<String, SessionCost> sessionCostTable = builder.table(
                 Topics.SESSION_COST,
@@ -144,8 +131,7 @@ public class FlightDeckStreamsApp {
         );
 
         // ── Register each processor fragment ──────────────────────────────────
-        AccumulateSessionContextProcessor.register(builder, thinkStream);
-        EnrichInputMessageProcessor.register(builder, memoirTable, sessionContextTable, sessionCostTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, sessionCostTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
         SessionCostAggregationProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream);
@@ -154,7 +140,7 @@ public class FlightDeckStreamsApp {
 
         if (memoirEnabled) {
             SessionEndProcessor.register(builder, thinkStream);
-            MemoirSessionEndProcessor.register(builder, memoirTable, sessionContextTable, thinkTable);
+            MemoirSessionEndProcessor.register(builder, memoirTable, thinkTable);
             log.info("Memoir is ENABLED (inactivity_threshold={}s)",
                     SessionEndProcessor.INACTIVITY_THRESHOLD.getSeconds());
         } else {
@@ -177,7 +163,6 @@ public class FlightDeckStreamsApp {
 
         List<String> requiredTopics = new java.util.ArrayList<>(List.of(
                 Topics.MESSAGE_INPUT,
-                Topics.SESSION_CONTEXT,
                 Topics.ENRICHED_MESSAGE_INPUT,
                 Topics.THINK_REQUEST_RESPONSE,
                 Topics.TOOL_USE,
@@ -209,7 +194,18 @@ public class FlightDeckStreamsApp {
                 log.info("Creating {} missing topics: {}",
                         toCreate.size(),
                         toCreate.stream().map(NewTopic::name).toList());
-                admin.createTopics(toCreate).all().get(30, TimeUnit.SECONDS);
+                var results = admin.createTopics(toCreate).values();
+                for (var entry : results.entrySet()) {
+                    try {
+                        entry.getValue().get(30, TimeUnit.SECONDS);
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        if (e.getCause() instanceof org.apache.kafka.common.errors.TopicExistsException) {
+                            log.debug("Topic {} already exists — skipping", entry.getKey());
+                        } else {
+                            throw e;
+                        }
+                    }
+                }
             }
 
             log.info("All {} required topics verified", requiredTopics.size());

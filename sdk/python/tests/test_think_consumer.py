@@ -232,3 +232,146 @@ class TestCallClaude:
 
         body = json.loads(mock_urlopen.call_args[0][0].data.decode())
         assert "tools" not in body
+
+
+class TestEmitErrorResponse:
+    def test_produces_error_message_with_end_turn(self):
+        runner = make_runner()
+        # Access the mocked producer
+        producer = runner._producer
+
+        value = json.dumps({"userId": "alice"})
+        runner._emit_error_response(
+            key="sess-42", value=value, reason="Gemini API error: HTTP 429",
+            topic="input-topic", partition=0, offset=0,
+        )
+
+        producer.produce.assert_called_once()
+        call_kwargs = producer.produce.call_args.kwargs
+        assert call_kwargs["topic"] == "test-agent-think-request-response"
+        assert call_kwargs["key"] == "sess-42"
+
+        payload = json.loads(call_kwargs["value"])
+        assert payload["sessionId"] == "sess-42"
+        assert payload["userId"] == "alice"
+        assert payload["endTurn"] is True
+        assert payload["cost"] is None
+        assert payload["inputTokens"] == 0
+        assert payload["outputTokens"] == 0
+        assert len(payload["messages"]) == 1
+        msg = payload["messages"][0]
+        assert msg["role"] == "assistant"
+        assert "error occurred" in msg["content"]
+        assert "HTTP 429" in msg["content"]
+        producer.flush.assert_called_once()
+
+    def test_handles_missing_user_id(self):
+        runner = make_runner()
+        producer = runner._producer
+
+        runner._emit_error_response(
+            key="sess-99", value="{}", reason="bad request",
+            topic="input-topic", partition=0, offset=0,
+        )
+
+        payload = json.loads(producer.produce.call_args.kwargs["value"])
+        assert payload["userId"] == ""
+        assert payload["endTurn"] is True
+        assert "bad request" in payload["messages"][0]["content"]
+
+    def test_handles_null_key(self):
+        runner = make_runner()
+        producer = runner._producer
+
+        runner._emit_error_response(
+            key=None, value="{}", reason="fail",
+            topic="input-topic", partition=0, offset=0,
+        )
+
+        payload = json.loads(producer.produce.call_args.kwargs["value"])
+        assert payload["sessionId"] == ""
+        assert payload["endTurn"] is True
+
+    def test_handles_invalid_json_value(self):
+        runner = make_runner()
+        producer = runner._producer
+
+        runner._emit_error_response(
+            key="sess-1", value="not-json", reason="oops",
+            topic="input-topic", partition=0, offset=0,
+        )
+
+        payload = json.loads(producer.produce.call_args.kwargs["value"])
+        assert payload["sessionId"] == "sess-1"
+        assert payload["userId"] == ""
+        assert payload["endTurn"] is True
+
+
+class TestParseGeminiResponse:
+    def test_text_only_response(self):
+        runner = make_runner(llm_provider="gemini", gemini_api_key="test-key")
+        response = {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": "Hello from Gemini"}],
+                    "role": "model",
+                },
+                "finishReason": "STOP",
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "candidatesTokenCount": 50,
+            },
+        }
+
+        result = runner._parse_gemini_response(
+            response, "sess-1", "user-1",
+            latest_input={"content": "hi"}, history=[],
+        )
+
+        assert result["sessionId"] == "sess-1"
+        assert result["endTurn"] is True
+        assert result["inputTokens"] == 100
+        assert result["outputTokens"] == 50
+        assert len(result["toolUses"]) == 0
+        # messages[0] = latest_input, messages[1] = assistant text
+        assert result["messages"][1]["role"] == "assistant"
+        assert result["messages"][1]["content"] == "Hello from Gemini"
+
+    def test_function_call_response(self):
+        runner = make_runner(llm_provider="gemini", gemini_api_key="test-key")
+        response = {
+            "candidates": [{
+                "content": {
+                    "parts": [
+                        {"text": "Let me check."},
+                        {"functionCall": {"name": "kafka_broker_health", "args": {}}},
+                    ],
+                    "role": "model",
+                },
+                "finishReason": "STOP",
+            }],
+            "usageMetadata": {"promptTokenCount": 200, "candidatesTokenCount": 80},
+        }
+
+        result = runner._parse_gemini_response(
+            response, "sess-2", "user-2",
+            latest_input={}, history=[],
+        )
+
+        assert result["endTurn"] is False
+        assert len(result["toolUses"]) == 1
+        assert result["toolUses"][0]["name"] == "kafka_broker_health"
+        assert result["toolUses"][0]["toolUseId"].startswith("toolu_")
+        # Assistant message has structured content blocks
+        assistant_msg = result["messages"][0]
+        assert assistant_msg["role"] == "assistant"
+        assert isinstance(assistant_msg["content"], list)
+
+    def test_empty_candidates_raises(self):
+        runner = make_runner(llm_provider="gemini", gemini_api_key="test-key")
+        with pytest.raises(RuntimeError, match="No candidates"):
+            runner._parse_gemini_response(
+                {"candidates": []}, "s", "u",
+                latest_input={}, history=[],
+            )

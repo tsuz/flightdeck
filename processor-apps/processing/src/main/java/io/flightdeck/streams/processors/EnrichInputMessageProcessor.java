@@ -3,8 +3,8 @@ package io.flightdeck.streams.processors;
 import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.MessageInput;
 import io.flightdeck.streams.model.FullSessionContext;
-import io.flightdeck.streams.model.SessionContext;
 import io.flightdeck.streams.model.SessionCost;
+import io.flightdeck.streams.model.ThinkResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -23,7 +24,7 @@ import java.util.List;
  *   message-input  (KStream — raw user turn, keyed by session_id)
  *         │
  *         │   leftJoin
- *         │◄──────────────  session-context  (KTable — accumulated history)
+ *         │◄──────────────  think-request-response (KTable — previous turn's full state)
  *         │
  *         │   leftJoin
  *         │◄──────────────  session-cost     (KTable — aggregated cost per session)
@@ -34,6 +35,9 @@ import java.util.List;
  *         ▼
  *   enriched-message-input  (KStream — history + cost + memoir + latest input)
  * </pre>
+ *
+ * <p>History is reconstructed from the previous ThinkResponse:
+ * {@code previousMessages + [lastInputMessage] + lastInputResponse}.
  */
 public class EnrichInputMessageProcessor {
 
@@ -41,12 +45,12 @@ public class EnrichInputMessageProcessor {
 
     /**
      * @param memoirTable      shared KTable for memoir-context (keyed by userId)
-     * @param contextTable     shared KTable for session-context (keyed by sessionId)
+     * @param thinkTable       shared KTable for think-request-response (keyed by sessionId)
      * @param sessionCostTable shared KTable for session-cost (keyed by sessionId)
      */
     public static void register(StreamsBuilder builder,
                                 KTable<String, String> memoirTable,
-                                KTable<String, SessionContext> contextTable,
+                                KTable<String, ThinkResponse> thinkTable,
                                 KTable<String, SessionCost> sessionCostTable) {
 
         // ── Left side: incoming user messages ────────────────────────────────
@@ -59,15 +63,15 @@ public class EnrichInputMessageProcessor {
         KStream<String, MessageInput> keyedStream = inputStream
                 .selectKey((key, msg) -> msg.sessionId());
 
-        // ── Join: message ⟕ session-context (⟕ memoir-context if enabled) ──
+        // ── Join: message ⟕ think-request-response (build history from previous turn)
         KStream<String, FullSessionContext> enriched = keyedStream
                 .leftJoin(
-                        contextTable,
-                        EnrichInputMessageProcessor::enrichWithContext,
+                        thinkTable,
+                        EnrichInputMessageProcessor::enrichWithThinkResponse,
                         Joined.with(
                                 Serdes.String(),
                                 JsonSerde.of(MessageInput.class),
-                                JsonSerde.of(SessionContext.class)
+                                JsonSerde.of(ThinkResponse.class)
                         )
                 );
 
@@ -112,16 +116,30 @@ public class EnrichInputMessageProcessor {
     }
 
     /**
-     * First join: merge incoming message with session history.
+     * Build history from the previous ThinkResponse:
+     * {@code previousMessages + [lastInputMessage] + lastInputResponse}.
      */
-    static FullSessionContext enrichWithContext(MessageInput message, SessionContext context) {
-        List<MessageInput> history = (context != null && context.history() != null)
-                ? context.history()
-                : List.of();
+    static FullSessionContext enrichWithThinkResponse(MessageInput message, ThinkResponse prevResponse) {
+        List<MessageInput> history;
+
+        if (prevResponse == null) {
+            history = List.of();
+        } else {
+            history = new ArrayList<>();
+            if (prevResponse.previousMessages() != null) {
+                history.addAll(prevResponse.previousMessages());
+            }
+            if (prevResponse.lastInputMessage() != null) {
+                history.add(prevResponse.lastInputMessage());
+            }
+            if (prevResponse.lastInputResponse() != null) {
+                history.addAll(prevResponse.lastInputResponse());
+            }
+        }
 
         String userId = (message.userId() != null && !message.userId().isBlank())
                 ? message.userId()
-                : (context != null ? context.userId() : null);
+                : (prevResponse != null ? prevResponse.userId() : null);
 
         return new FullSessionContext(
                 message.sessionId(),
@@ -151,7 +169,7 @@ public class EnrichInputMessageProcessor {
     }
 
     /**
-     * Second join: attach memoir context to the already-enriched session context.
+     * Join: attach memoir context to the already-enriched session context.
      */
     static FullSessionContext enrichWithMemoir(FullSessionContext enriched, String memoir) {
         return new FullSessionContext(

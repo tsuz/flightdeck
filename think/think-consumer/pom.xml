@@ -66,6 +66,12 @@
             <version>3.25.3</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.11.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -78,6 +84,8 @@
                     <environmentVariables>
                         <AGENT_NAME>test</AGENT_NAME>
                         <TOOLS_JSON_FILE>${project.basedir}/src/test/resources/test-tools.json</TOOLS_JSON_FILE>
+                        <COMPACTION_USER_MESSAGE_TRIGGER>3</COMPACTION_USER_MESSAGE_TRIGGER>
+                        <COMPACTION_USER_MESSAGE_UNTIL>2</COMPACTION_USER_MESSAGE_UNTIL>
                     </environmentVariables>
                 </configuration>
             </plugin>

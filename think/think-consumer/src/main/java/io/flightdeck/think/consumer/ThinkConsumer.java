@@ -15,6 +15,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -74,7 +75,7 @@ public class ThinkConsumer implements AutoCloseable {
     }
 
     private final KafkaConsumer<String, String> consumer;
-    private final KafkaProducer<String, String> producer;
+    private final Producer<String, String> producer;
     private final ObjectMapper mapper;
     private final LlmApiService llmApiService;
     private volatile boolean running = true;
@@ -87,6 +88,14 @@ public class ThinkConsumer implements AutoCloseable {
         this.consumer = createConsumer();
         this.producer = createProducer();
         this.llmApiService = createLlmService(mapper);
+    }
+
+    /** Package-private constructor for unit testing with mock dependencies. */
+    ThinkConsumer(LlmApiService llmApiService, Producer<String, String> producer, ObjectMapper mapper) {
+        this.llmApiService = llmApiService;
+        this.mapper = mapper;
+        this.consumer = null;
+        this.producer = producer;
     }
 
     private static LlmApiService createLlmService(ObjectMapper mapper) {
@@ -117,6 +126,12 @@ public class ThinkConsumer implements AutoCloseable {
     public void run() {
         consumer.subscribe(List.of(AppConfig.INPUT_TOPIC));
         log.info("Think consumer started — listening on topic: {}", AppConfig.INPUT_TOPIC);
+        log.info("Compaction config: COMPACTION_USER_MESSAGE_TRIGGER={} COMPACTION_USER_MESSAGE_UNTIL={} COMPACTION_PROMPT={}",
+                AppConfig.COMPACTION_USER_MESSAGE_TRIGGER,
+                AppConfig.COMPACTION_USER_MESSAGE_UNTIL,
+                AppConfig.COMPACTION_PROMPT.length() > 80
+                        ? AppConfig.COMPACTION_PROMPT.substring(0, 80) + "..."
+                        : AppConfig.COMPACTION_PROMPT);
 
         while (running) {
             ConsumerRecords<String, String> records = consumer.poll(
@@ -149,7 +164,6 @@ public class ThinkConsumer implements AutoCloseable {
         // 1. Deserialize input
         FullSessionContext context = mapper.readValue(record.value(), FullSessionContext.class);
 
-        // Use record key if present, otherwise fall back to session_id from the payload
         String sessionId = record.key() != null ? record.key() : context.sessionId();
         String userId = context.userId();
 
@@ -158,7 +172,7 @@ public class ThinkConsumer implements AutoCloseable {
                 context.history() != null ? context.history().size() : 0,
                 context.latestInput() != null ? context.latestInput().role() : "null");
 
-        // 2. Check session budget before calling Claude API
+        // 2. Check session budget
         if (AppConfig.BUDGET_PRICE_PER_SESSION != null
                 && context.cost() != null
                 && context.cost() >= AppConfig.BUDGET_PRICE_PER_SESSION) {
@@ -173,80 +187,148 @@ public class ThinkConsumer implements AutoCloseable {
                     AppConfig.BUDGET_PRICE_PER_SESSION);
 
             ThinkResponse budgetResponse = new ThinkResponse(
-                    sessionId,
-                    userId,
-                    null,
-                    context.cost(),
-                    0,
-                    0,
-                    List.of(new MessageInput(
-                            sessionId, userId, "assistant", budgetMessage,
-                            java.time.Instant.now().toString(), null
-                    )),
-                    null,
-                    true,
-                    java.time.Instant.now().toString()
-            );
+                    sessionId, userId, null, context.cost(), 0, 0,
+                    context.history(),
+                    context.latestInput(),
+                    List.of(new MessageInput(sessionId, userId, "assistant", budgetMessage,
+                            java.time.Instant.now().toString(), null)),
+                    null, true,
+                    false, 0, 0, 0.0,
+                    java.time.Instant.now().toString());
 
-            String outputJson = mapper.writeValueAsString(budgetResponse);
-            ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
-                    AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
-            producer.send(outputRecord);
-            producer.flush();
+            produceResponse(sessionId, budgetResponse);
             return;
         }
 
-        // 3. Build system prompt with memoir context
-        String systemPrompt = buildSystemPrompt(context.memoirContext());
+        // 3. Compact history if user message count exceeds trigger
+        List<MessageInput> effectiveHistory = context.history();
+        boolean compacted = false;
+        int compactionInputTokens = 0;
+        int compactionOutputTokens = 0;
+        double compactionCost = 0.0;
 
-        // 4. Convert history + latest input to LLM provider message format
-        List<Map<String, Object>> llmMessages = llmApiService.toApiMessages(
-                context.history(), context.latestInput());
+        if (AppConfig.COMPACTION_USER_MESSAGE_TRIGGER > 0
+                && effectiveHistory != null) {
 
-        // 5. Call LLM API
-        ThinkResponse thinkResponse = llmApiService.call(systemPrompt, llmMessages, sessionId, userId);
+            long userMessageCount = effectiveHistory.stream()
+                    .filter(m -> "user".equals(m.role()))
+                    .count();
 
-        // 6. Attach prevSessionCost from the enriched context
-        Double prevSessionCost = context.cost();
+            if (userMessageCount >= AppConfig.COMPACTION_USER_MESSAGE_TRIGGER) {
+                int splitIndex = findCompactionSplitIndex(
+                        effectiveHistory, AppConfig.COMPACTION_USER_MESSAGE_UNTIL);
 
-        // 7. Prepend the user's latestInput to the response so downstream
-        //    processors see the request-response pair for this turn.
-        if (context.latestInput() != null) {
-            List<MessageInput> augmentedMessages = new ArrayList<>();
-            augmentedMessages.add(context.latestInput());
-            if (thinkResponse.messages() != null) {
-                augmentedMessages.addAll(thinkResponse.messages());
+                if (splitIndex > 0) {
+                    // Guard: skip compaction during active tool loop
+                    boolean midToolLoop = context.latestInput() != null
+                            && "tool".equals(context.latestInput().role());
+
+                    if (!midToolLoop) {
+                        log.info("[{}] Compacting history: {} user messages >= trigger {}, keeping from index {}",
+                                sessionId, userMessageCount,
+                                AppConfig.COMPACTION_USER_MESSAGE_TRIGGER, splitIndex);
+
+                        List<MessageInput> oldMessages = effectiveHistory.subList(0, splitIndex);
+                        List<MessageInput> recentMessages = effectiveHistory.subList(
+                                splitIndex, effectiveHistory.size());
+
+                        // Convert old messages to plain text for summarization
+                        // (no function calls/responses — LLM needs readable text only)
+                        List<Map<String, Object>> summaryInput =
+                                toPlainTextMessages(oldMessages);
+
+                        log.info("[{}] Compaction LLM request: system_prompt={} messages={}",
+                                sessionId,
+                                AppConfig.COMPACTION_PROMPT.length() > 80
+                                        ? AppConfig.COMPACTION_PROMPT.substring(0, 80) + "..."
+                                        : AppConfig.COMPACTION_PROMPT,
+                                mapper.writeValueAsString(summaryInput));
+
+                        ThinkResponse summaryResponse = llmApiService.callWithoutTools(
+                                AppConfig.COMPACTION_PROMPT, summaryInput, sessionId, userId);
+
+                        log.info("[{}] Compaction LLM response: input_tokens={} output_tokens={} cost={} lastInputResponse={}",
+                                sessionId,
+                                summaryResponse.inputTokens(),
+                                summaryResponse.outputTokens(),
+                                summaryResponse.cost() != null ? String.format("$%.6f", summaryResponse.cost()) : "null",
+                                summaryResponse.lastInputResponse() != null
+                                        ? mapper.writeValueAsString(summaryResponse.lastInputResponse())
+                                        : "null");
+
+                        // Capture compaction metrics
+                        compacted = true;
+                        compactionInputTokens = summaryResponse.inputTokens();
+                        compactionOutputTokens = summaryResponse.outputTokens();
+                        compactionCost = summaryResponse.cost() != null ? summaryResponse.cost() : 0.0;
+
+                        String summaryText = extractTextFromMessages(
+                                summaryResponse.lastInputResponse());
+
+                        log.info("[{}] Compaction summary text: {}", sessionId, summaryText);
+
+                        MessageInput summaryMsg = new MessageInput(
+                                sessionId, userId, "assistant",
+                                "[Conversation Summary]\n" + summaryText,
+                                java.time.Instant.now().toString(), null);
+
+                        List<MessageInput> compactedList = new ArrayList<>();
+                        compactedList.add(summaryMsg);
+                        compactedList.addAll(recentMessages);
+                        effectiveHistory = compactedList;
+
+                        log.info("[{}] History compacted: {} messages → {} (compaction_cost=${})",
+                                sessionId, context.history().size(), effectiveHistory.size(),
+                                String.format("%.6f", compactionCost));
+                    }
+                }
             }
-            thinkResponse = new ThinkResponse(
-                    thinkResponse.sessionId(),
-                    thinkResponse.userId(),
-                    thinkResponse.cost(),
-                    prevSessionCost,
-                    thinkResponse.inputTokens(),
-                    thinkResponse.outputTokens(),
-                    augmentedMessages,
-                    thinkResponse.toolUses(),
-                    thinkResponse.endTurn(),
-                    thinkResponse.timestamp()
-            );
-        } else {
-            // Still need to set prevSessionCost even without latestInput prepend
-            thinkResponse = new ThinkResponse(
-                    thinkResponse.sessionId(),
-                    thinkResponse.userId(),
-                    thinkResponse.cost(),
-                    prevSessionCost,
-                    thinkResponse.inputTokens(),
-                    thinkResponse.outputTokens(),
-                    thinkResponse.messages(),
-                    thinkResponse.toolUses(),
-                    thinkResponse.endTurn(),
-                    thinkResponse.timestamp()
-            );
         }
 
+        // 4. Build system prompt with memoir context
+        String systemPrompt = buildSystemPrompt(context.memoirContext());
+
+        // 5. Convert history + latest input to LLM provider message format
+        List<Map<String, Object>> llmMessages = llmApiService.toApiMessages(
+                effectiveHistory, context.latestInput());
+
+        // 6. Call LLM API
+        ThinkResponse thinkResponse = llmApiService.call(systemPrompt, llmMessages, sessionId, userId);
+
+        // 7. Build final ThinkResponse
+        Double prevSessionCost = context.cost();
+
+        thinkResponse = new ThinkResponse(
+                sessionId,
+                userId,
+                thinkResponse.cost(),
+                prevSessionCost,
+                thinkResponse.inputTokens(),
+                thinkResponse.outputTokens(),
+                effectiveHistory,
+                context.latestInput(),
+                thinkResponse.lastInputResponse(),
+                thinkResponse.toolUses(),
+                thinkResponse.endTurn(),
+                compacted,
+                compactionInputTokens,
+                compactionOutputTokens,
+                compactionCost,
+                thinkResponse.timestamp());
+
         // 8. Produce to think-request-response
-        String outputJson = mapper.writeValueAsString(thinkResponse);
+        log.info("[{}] Producing ThinkResponse: previousMessages={} lastInputMessage={} lastInputResponse={} compaction={}",
+                sessionId,
+                thinkResponse.previousMessages() != null ? thinkResponse.previousMessages().size() : 0,
+                thinkResponse.lastInputMessage() != null ? thinkResponse.lastInputMessage().role() : "null",
+                thinkResponse.lastInputResponse() != null ? thinkResponse.lastInputResponse().size() : 0,
+                compacted);
+
+        produceResponse(sessionId, thinkResponse);
+    }
+
+    private void produceResponse(String sessionId, ThinkResponse response) throws Exception {
+        String outputJson = mapper.writeValueAsString(response);
         ProducerRecord<String, String> outputRecord = new ProducerRecord<>(
                 AppConfig.OUTPUT_TOPIC, sessionId, outputJson);
 
@@ -274,6 +356,159 @@ public class ThinkConsumer implements AutoCloseable {
         }
 
         return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());
+    }
+
+    /**
+     * Emits an error response to the output topic so the user sees the failure.
+     */
+    void emitErrorResponse(ConsumerRecord<String, String> record, Exception e) {
+        try {
+            String sessionId = record.key() != null ? record.key() : "unknown";
+            String userId = "";
+
+            // Try to extract userId from the payload
+            try {
+                FullSessionContext ctx = mapper.readValue(record.value(), FullSessionContext.class);
+                if (ctx.userId() != null) userId = ctx.userId();
+            } catch (Exception ignored) {}
+
+            ThinkResponse errorResponse = buildErrorResponse(sessionId, userId, e);
+
+            String outputJson = mapper.writeValueAsString(errorResponse);
+            producer.send(new ProducerRecord<>(AppConfig.OUTPUT_TOPIC, sessionId, outputJson));
+            producer.flush();
+            log.info("[{}] Emitted error response to {}", sessionId, AppConfig.OUTPUT_TOPIC);
+        } catch (Exception ex) {
+            log.error("Failed to emit error response: {}", ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * Builds a ThinkResponse representing an error — endTurn=true with a user-visible message.
+     */
+    static ThinkResponse buildErrorResponse(String sessionId, String userId, Exception e) {
+        String errorMessage = "Sorry, an error occurred while processing your request: " + e.getMessage();
+        return new ThinkResponse(
+                sessionId, userId, null, null, 0, 0,
+                null, null,
+                List.of(new MessageInput(sessionId, userId, "assistant", errorMessage,
+                        java.time.Instant.now().toString(), null)),
+                null, true,
+                false, 0, 0, 0.0,
+                java.time.Instant.now().toString());
+    }
+
+    /**
+     * Converts message history to plain text user/assistant messages for compaction.
+     * Tool interactions are flattened to readable text so the LLM can summarize them
+     * without needing function call/response structures.
+     */
+    static List<Map<String, Object>> toPlainTextMessages(List<MessageInput> messages) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MessageInput msg : messages) {
+            String role = msg.role();
+            String text;
+
+            if (msg.content() instanceof String s) {
+                text = s;
+            } else if (msg.content() instanceof List<?> blocks) {
+                // Structured content — extract text from blocks
+                StringBuilder sb = new StringBuilder();
+                for (Object block : blocks) {
+                    if (block instanceof Map<?, ?> m) {
+                        if ("text".equals(m.get("type"))) {
+                            sb.append(m.get("text"));
+                        } else if ("tool_use".equals(m.get("type"))) {
+                            sb.append("[Called tool: ").append(m.get("name")).append("]");
+                        } else if (m.containsKey("tool_use_id")) {
+                            // Tool result
+                            Object resultObj = m.get("result");
+                            if (resultObj == null) resultObj = m.get("content");
+                            sb.append("[Tool result: ").append(resultObj).append("]");
+                        }
+                    }
+                }
+                text = sb.toString();
+            } else {
+                text = String.valueOf(msg.content());
+            }
+
+            if (text == null || text.isBlank()) continue;
+
+            // Map roles: user stays user, assistant/tool become assistant
+            String mappedRole = "user".equals(role) ? "user" : "assistant";
+
+            // Merge consecutive same-role messages
+            if (!result.isEmpty() && mappedRole.equals(result.get(result.size() - 1).get("role"))) {
+                Map<String, Object> last = result.get(result.size() - 1);
+                last.put("content", last.get("content") + "\n" + text);
+            } else {
+                Map<String, Object> entry = new java.util.LinkedHashMap<>();
+                entry.put("role", mappedRole);
+                entry.put("content", text);
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Finds the index in the history list where the split should happen for compaction.
+     * Everything before this index will be summarized; everything from this index onward is kept.
+     *
+     * @param history  the full message history
+     * @param keepLast number of user messages to keep (from the end)
+     * @return the index of the first kept user message, or -1 if nothing to compact
+     */
+    static int findCompactionSplitIndex(List<MessageInput> history, int keepLast) {
+        if (history == null || keepLast <= 0) return -1;
+
+        // Count total user messages
+        long totalUserMessages = history.stream()
+                .filter(m -> "user".equals(m.role()))
+                .count();
+
+        if (totalUserMessages <= keepLast) return -1;
+
+        // Find the index of the (totalUserMessages - keepLast + 1)th user message
+        // i.e., the first user message we want to keep
+        long target = totalUserMessages - keepLast;
+        long seen = 0;
+        for (int i = 0; i < history.size(); i++) {
+            if ("user".equals(history.get(i).role())) {
+                seen++;
+                if (seen > target) {
+                    return i; // this is the first user message to keep
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Checks whether a message contains tool_use content blocks (structured content).
+     */
+    static boolean hasToolUseContent(MessageInput msg) {
+        if (msg.content() instanceof List<?> blocks) {
+            return blocks.stream().anyMatch(b ->
+                    b instanceof Map<?, ?> m && "tool_use".equals(m.get("type")));
+        }
+        return false;
+    }
+
+    /**
+     * Extracts plain text from a list of messages (used for compaction summary).
+     */
+    static String extractTextFromMessages(List<MessageInput> messages) {
+        if (messages == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (MessageInput msg : messages) {
+            if (msg.content() instanceof String text) {
+                if (!sb.isEmpty()) sb.append("\n");
+                sb.append(text);
+            }
+        }
+        return sb.toString();
     }
 
     public void shutdown() {

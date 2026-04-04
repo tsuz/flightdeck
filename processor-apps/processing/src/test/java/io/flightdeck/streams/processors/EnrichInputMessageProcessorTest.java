@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assertions.*;
  * The topology under test:
  *   message-input  (KStream)
  *       leftJoin
- *   message-context (KTable)
+ *   think-request-response (KTable)
+ *       leftJoin
+ *   session-cost (KTable)
  *       ▼
  *   enriched-message-input (KStream)
  */
@@ -33,8 +35,8 @@ class EnrichInputMessageProcessorTest {
     /** Drives raw user messages onto message-input */
     private TestInputTopic<String, MessageInput>   messageInput;
 
-    /** Seeds the message-context KTable directly */
-    private TestInputTopic<String, SessionContext>  contextInput;
+    /** Seeds the think-request-response KTable directly */
+    private TestInputTopic<String, ThinkResponse>  thinkInput;
 
     /** Captures the enriched FullSessionContext records */
     private TestOutputTopic<String, FullSessionContext> fullContextOutput;
@@ -50,14 +52,14 @@ class EnrichInputMessageProcessorTest {
         KTable<String, String> memoirTable = builder.table(
                 Topics.MEMOIR_CONTEXT,
                 Consumed.with(Serdes.String(), Serdes.String()));
-        KTable<String, SessionContext> contextTable = builder.table(
-                Topics.SESSION_CONTEXT,
-                Consumed.with(Serdes.String(), JsonSerde.of(SessionContext.class)));
+        KTable<String, ThinkResponse> thinkTable = builder.table(
+                Topics.THINK_REQUEST_RESPONSE,
+                Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
         KTable<String, SessionCost> sessionCostTable = builder.table(
                 Topics.SESSION_COST,
                 Consumed.with(Serdes.String(), JsonSerde.of(SessionCost.class)));
 
-        EnrichInputMessageProcessor.register(builder, memoirTable, contextTable, sessionCostTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, sessionCostTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");
@@ -70,11 +72,11 @@ class EnrichInputMessageProcessorTest {
                 Serdes.String().serializer(),
                 JsonSerde.of(MessageInput.class).serializer());
 
-        // Seed the KTable by writing directly to the message-context topic
-        contextInput = driver.createInputTopic(
-                Topics.SESSION_CONTEXT,
+        // Seed the KTable by writing directly to the think-request-response topic
+        thinkInput = driver.createInputTopic(
+                Topics.THINK_REQUEST_RESPONSE,
                 Serdes.String().serializer(),
-                JsonSerde.of(SessionContext.class).serializer());
+                JsonSerde.of(ThinkResponse.class).serializer());
 
         memoirInput = driver.createInputTopic(
                 Topics.MEMOIR_CONTEXT,
@@ -106,31 +108,36 @@ class EnrichInputMessageProcessorTest {
     }
 
     @Test
-    @DisplayName("Message with existing context carries the full history")
-    void messageWithContext_includesHistory() {
-        // Seed the KTable with two prior turns
-        SessionContext ctx = context("sess-h", "user-A", List.of(
-                assistantMsg("sess-h", "user-A", "First reply."),
-                assistantMsg("sess-h", "user-A", "Second reply.")
-        ));
-        contextInput.pipeInput("sess-h", ctx);
+    @DisplayName("Message with existing ThinkResponse carries the reconstructed history")
+    void messageWithThinkResponse_includesHistory() {
+        // Seed the KTable with a previous ThinkResponse
+        ThinkResponse prevResponse = new ThinkResponse("sess-h", "user-A", 0.01, null, 100, 50,
+                List.of(assistantMsg("sess-h", "user-A", "First reply.")),
+                userMsg("sess-h", "user-A", "Second question"),
+                List.of(assistantMsg("sess-h", "user-A", "Second reply.")),
+                List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("sess-h", prevResponse);
 
         // Now a new user message arrives
         messageInput.pipeInput("sess-h", userMsg("sess-h", "user-A", "Follow-up?"));
 
         FullSessionContext full = fullContextOutput.readRecord().value();
 
-        assertThat(full.history()).hasSize(2);
+        // History = previousMessages + lastInputMessage + lastInputResponse
+        assertThat(full.history()).hasSize(3);
         assertThat(full.history()).extracting(MessageInput::content)
-                .containsExactly("First reply.", "Second reply.");
+                .containsExactly("First reply.", "Second question", "Second reply.");
         assertThat(full.latestInput().content()).isEqualTo("Follow-up?");
     }
 
     @Test
     @DisplayName("latestInput is always the incoming message, not part of history")
     void latestInput_isNotInHistory() {
-        contextInput.pipeInput("sess-li", context("sess-li", "u", List.of(
-                assistantMsg("sess-li", "u", "Prior turn."))));
+        ThinkResponse prevResponse = new ThinkResponse("sess-li", "u", 0.01, null, 100, 50,
+                null, null,
+                List.of(assistantMsg("sess-li", "u", "Prior turn.")),
+                List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("sess-li", prevResponse);
 
         messageInput.pipeInput("sess-li", userMsg("sess-li", "u", "New question"));
 
@@ -156,16 +163,20 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("userId is taken from the incoming message when present")
     void userId_fromMessage() {
-        contextInput.pipeInput("sess-u1", context("sess-u1", "old-user", List.of()));
+        ThinkResponse prevResponse = new ThinkResponse("sess-u1", "old-user", 0.01, null, 100, 50,
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("sess-u1", prevResponse);
         messageInput.pipeInput("sess-u1", userMsg("sess-u1", "new-user", "hi"));
 
         assertThat(fullContextOutput.readRecord().value().userId()).isEqualTo("new-user");
     }
 
     @Test
-    @DisplayName("userId falls back to context value when message carries none")
-    void userId_fallsBackToContext() {
-        contextInput.pipeInput("sess-u2", context("sess-u2", "ctx-user", List.of()));
+    @DisplayName("userId falls back to ThinkResponse value when message carries none")
+    void userId_fallsBackToThinkResponse() {
+        ThinkResponse prevResponse = new ThinkResponse("sess-u2", "ctx-user", 0.01, null, 100, 50,
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("sess-u2", prevResponse);
         // Message has null userId (e.g. scheduler-triggered input)
         MessageInput schedulerMsg = new MessageInput("sess-u2", null, "user",
                 "Scheduled trigger", TS, Map.of());
@@ -175,7 +186,7 @@ class EnrichInputMessageProcessorTest {
     }
 
     @Test
-    @DisplayName("userId is null when neither message nor context provides one")
+    @DisplayName("userId is null when neither message nor ThinkResponse provides one")
     void userId_nullWhenNoSource() {
         MessageInput msg = new MessageInput("sess-u3", null, "user", "hi", TS, Map.of());
         messageInput.pipeInput("sess-u3", msg);
@@ -188,8 +199,17 @@ class EnrichInputMessageProcessorTest {
     @Test
     @DisplayName("Two sessions receive their own independent histories")
     void sessionIsolation() {
-        contextInput.pipeInput("A", context("A", "u1", List.of(assistantMsg("A","u1","a1"), assistantMsg("A","u1","a2"))));
-        contextInput.pipeInput("B", context("B", "u2", List.of(assistantMsg("B","u2","b1"))));
+        ThinkResponse respA = new ThinkResponse("A", "u1", 0.01, null, 100, 50,
+                List.of(assistantMsg("A", "u1", "a1")),
+                null,
+                List.of(assistantMsg("A", "u1", "a2")),
+                List.of(), true, false, 0, 0, 0.0, TS);
+        ThinkResponse respB = new ThinkResponse("B", "u2", 0.01, null, 100, 50,
+                null, null,
+                List.of(assistantMsg("B", "u2", "b1")),
+                List.of(), true, false, 0, 0, 0.0, TS);
+        thinkInput.pipeInput("A", respA);
+        thinkInput.pipeInput("B", respB);
 
         messageInput.pipeInput("A", userMsg("A", "u1", "question-a"));
         messageInput.pipeInput("B", userMsg("B", "u2", "question-b"));
@@ -206,52 +226,58 @@ class EnrichInputMessageProcessorTest {
         assertThat(forB.history()).hasSize(1);
     }
 
-    // ── enrich() unit tests (pure function, no Kafka involved) ───────────────
+    // ── enrichWithThinkResponse() unit tests (pure function, no Kafka involved) ─
 
     @Test
-    @DisplayName("enrich(): null context produces empty history")
-    void enrich_nullContext_emptyHistory() {
+    @DisplayName("enrichWithThinkResponse(): null ThinkResponse produces empty history")
+    void enrich_nullThinkResponse_emptyHistory() {
         MessageInput msg = userMsg("s", "u", "hello");
-        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, null);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, null);
         assertThat(result.history()).isEmpty();
         assertThat(result.latestInput()).isEqualTo(msg);
         assertThat(result.sessionId()).isEqualTo("s");
     }
 
     @Test
-    @DisplayName("enrich(): context with null history is treated as empty")
-    void enrich_contextWithNullHistory() {
+    @DisplayName("enrichWithThinkResponse(): ThinkResponse with null fields is treated as empty history")
+    void enrich_thinkResponseWithNullFields() {
         MessageInput msg = userMsg("s", "u", "hello");
-        SessionContext ctx = new SessionContext("s", "u", 0.0, 0, List.of(), null, TS);
-        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, ctx);
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.0, null, 0, 0,
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
         assertThat(result.history()).isEmpty();
     }
 
     @Test
-    @DisplayName("enrich(): history from context is forwarded unchanged")
-    void enrich_historyForwarded() {
+    @DisplayName("enrichWithThinkResponse(): history is reconstructed from ThinkResponse fields")
+    void enrich_historyReconstructed() {
         MessageInput msg = userMsg("s", "u", "new");
         MessageInput prior = assistantMsg("s", "u", "old");
-        SessionContext ctx = context("s", "u", List.of(prior));
-        FullSessionContext result = EnrichInputMessageProcessor.enrichWithContext(msg, ctx);
-        assertThat(result.history()).containsExactly(prior);
+        MessageInput inputMsg = userMsg("s", "u", "question");
+        MessageInput response = assistantMsg("s", "u", "answer");
+        ThinkResponse resp = new ThinkResponse("s", "u", 0.01, null, 100, 50,
+                List.of(prior), inputMsg, List.of(response), List.of(), true, false, 0, 0, 0.0, TS);
+        FullSessionContext result = EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp);
+        assertThat(result.history()).containsExactly(prior, inputMsg, response);
         assertThat(result.latestInput()).isEqualTo(msg);
     }
 
     @Test
-    @DisplayName("enrich(): userId prefers message over context")
+    @DisplayName("enrichWithThinkResponse(): userId prefers message over ThinkResponse")
     void enrich_userIdFromMessage() {
         MessageInput msg = userMsg("s", "msg-user", "hi");
-        SessionContext ctx = context("s", "ctx-user", List.of());
-        assertThat(EnrichInputMessageProcessor.enrichWithContext(msg, ctx).userId()).isEqualTo("msg-user");
+        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
+        assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("msg-user");
     }
 
     @Test
-    @DisplayName("enrich(): userId falls back to context when message userId is blank")
+    @DisplayName("enrichWithThinkResponse(): userId falls back to ThinkResponse when message userId is blank")
     void enrich_userIdFallback() {
         MessageInput msg = new MessageInput("s", "  ", "user", "hi", TS, Map.of());
-        SessionContext ctx = context("s", "ctx-user", List.of());
-        assertThat(EnrichInputMessageProcessor.enrichWithContext(msg, ctx).userId()).isEqualTo("ctx-user");
+        ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 100, 50,
+                null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
+        assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("ctx-user");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -264,12 +290,5 @@ class EnrichInputMessageProcessorTest {
 
     private static MessageInput assistantMsg(String sessionId, String userId, String content) {
         return new MessageInput(sessionId, userId, "assistant", content, TS, Map.of());
-    }
-
-    private static SessionContext context(String sessionId, String userId,
-                                          List<MessageInput> history) {
-        return new SessionContext(sessionId, userId, 0.0, history.size(),
-                history.isEmpty() ? List.of() : List.of(history.get(history.size() - 1)),
-                history, TS);
     }
 }

@@ -85,8 +85,8 @@ public class StandaloneRunner {
             ThinkResponse response = claudeApi.call(systemPrompt, messages, "standalone", "cli-user");
 
             // Print response content
-            if (response.messages() != null) {
-                for (var msg : response.messages()) {
+            if (response.lastInputResponse() != null) {
+                for (var msg : response.lastInputResponse()) {
                     System.out.println(msg.content());
                 }
             }

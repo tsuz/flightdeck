@@ -112,6 +112,57 @@ public class ClaudeApiService implements LlmApiService {
         }
     }
 
+    @Override
+    public ThinkResponse callWithoutTools(String systemPrompt,
+                                          List<Map<String, Object>> messages,
+                                          String sessionId,
+                                          String userId) {
+        try {
+            // Pack the entire conversation into a single user message.
+            // Claude requires the first message to be role: "user".
+            StringBuilder conversationText = new StringBuilder();
+            for (Map<String, Object> msg : messages) {
+                String role = String.valueOf(msg.getOrDefault("role", "user"));
+                String text = String.valueOf(msg.getOrDefault("content", ""));
+                conversationText.append(role.toUpperCase()).append(": ").append(text).append("\n\n");
+            }
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("max_tokens", maxTokens);
+            body.put("system", systemPrompt);
+            body.put("messages", List.of(Map.of("role", "user", "content", conversationText.toString())));
+            // No tools
+
+            String requestBody = mapper.writeValueAsString(body);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
+                    .header("Content-Type", "application/json")
+                    .header("x-api-key", apiKey)
+                    .header("anthropic-version", "2023-06-01")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(120))
+                    .build();
+
+            log.info("[{}] Calling Claude API (no tools): model={} messages={}", sessionId, model, messages.size());
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("[{}] Claude API returned status {}: {}", sessionId, response.statusCode(), response.body());
+                throw new RuntimeException("Claude API error: HTTP " + response.statusCode());
+            }
+
+            return parseResponse(response.body(), sessionId, userId);
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Claude API call (no tools) failed for session " + sessionId, e);
+        }
+    }
+
     private Map<String, Object> buildRequestBody(String systemPrompt, List<Map<String, Object>> messages) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -230,9 +281,12 @@ public class ClaudeApiService implements LlmApiService {
                     null,   // prevSessionCost — set by ThinkConsumer
                     inputTokens,
                     outputTokens,
-                    responseMessages,
+                    null,   // previousMessages — set by ThinkConsumer
+                    null,   // lastInputMessage — set by ThinkConsumer
+                    responseMessages,  // lastInputResponse
                     toolUses.isEmpty() ? null : toolUses,
                     endTurn,
+                    false, 0, 0, 0.0,  // compaction fields — set by ThinkConsumer
                     Instant.now().toString()
             );
 

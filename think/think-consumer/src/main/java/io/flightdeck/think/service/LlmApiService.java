@@ -20,6 +20,14 @@ public interface LlmApiService {
                        String userId);
 
     /**
+     * Sends a prompt to the LLM without tool definitions (e.g. for compaction).
+     */
+    ThinkResponse callWithoutTools(String systemPrompt,
+                                   List<Map<String, Object>> messages,
+                                   String sessionId,
+                                   String userId);
+
+    /**
      * Converts internal MessageInput history into the provider-specific message format.
      */
     List<Map<String, Object>> toApiMessages(List<MessageInput> history, MessageInput latestInput);

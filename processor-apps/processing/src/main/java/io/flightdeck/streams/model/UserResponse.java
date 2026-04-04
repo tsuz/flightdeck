@@ -16,7 +16,6 @@ public record UserResponse(
         @JsonProperty("session_id")   String sessionId,
         @JsonProperty("user_id")      String userId,
         @JsonProperty("content")      String content,
-        @JsonProperty("llm_calls")    int llmCalls,
         @JsonProperty("input_tokens") int inputTokens,
         @JsonProperty("output_tokens") int outputTokens,
         @JsonProperty("cost")         Double cost,

@@ -18,7 +18,6 @@ const TOPIC_LABELS: Record<string, string> = {
   "tool-use-result": "Tool Result",
   "tool-use-all-complete": "Tools Complete",
   "tool-use-latency": "Tool Latency",
-  "session-cost": "Session Cost",
   "message-output": "Final Output",
 };
 
@@ -32,7 +31,6 @@ const TOPIC_ICONS: Record<string, string> = {
   "tool-use-result": "RES",
   "tool-use-all-complete": "ALL",
   "tool-use-latency": "LAT",
-  "session-cost": "CST",
   "message-output": "OUT",
 };
 
@@ -46,7 +44,6 @@ const TOPIC_COLORS: Record<string, string> = {
   "tool-use-result": "#10b981",
   "tool-use-all-complete": "#14b8a6",
   "tool-use-latency": "#06b6d4",
-  "session-cost": "#f97316",
   "message-output": "#22c55e",
 };
 
@@ -88,9 +85,7 @@ function eventSummary(event: PipelineEvent): string {
     case "enriched-message-input":
       return `history: ${Array.isArray(v.history) ? v.history.length : 0} items`;
     case "session-context":
-      return `turns: ${v.llm_calls ?? 0}, cost: ${v.cost != null ? formatDollars(Number(v.cost)) : "-"}`;
-    case "session-cost":
-      return `cost: ${v.total_cost != null ? formatDollars(Number(v.total_cost)) : JSON.stringify(v).slice(0, 60)}`;
+      return `cost: ${v.cost != null ? formatDollars(Number(v.cost)) : "-"}`;
     default:
       return truncate(JSON.stringify(v), 80);
   }

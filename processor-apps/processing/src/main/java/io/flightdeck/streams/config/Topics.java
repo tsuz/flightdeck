@@ -49,9 +49,6 @@ public final class Topics {
     public static final String TOOL_USE_ALL_COMPLETE    = PREFIX + "tool-use-all-complete";
 
     // ── Observability ─────────────────────────────────────────────────────────
-    /** Aggregated cost (tokens × pricing) per conversation session */
-    public static final String SESSION_COST             = PREFIX + "session-cost";
-
     /** Per-tool latency metrics, keyed by tool_name */
     public static final String TOOL_USE_LATENCY         = PREFIX + "tool-use-latency";
 

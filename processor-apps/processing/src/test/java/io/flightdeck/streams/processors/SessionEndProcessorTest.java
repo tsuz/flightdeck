@@ -263,7 +263,7 @@ class SessionEndProcessorTest {
     }
 
     private static ThinkResponse thinkResponse(String sessionId) {
-        return new ThinkResponse(sessionId, "user-1", 0.01, null, 100, 50,
+        return new ThinkResponse(sessionId, "user-1", 0.01, null, 0.01, 100, 50,
                 null, null, null, null, true, false, 0, 0, 0.0, TS);
     }
 }

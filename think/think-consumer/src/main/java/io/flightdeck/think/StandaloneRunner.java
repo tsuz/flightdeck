@@ -94,9 +94,9 @@ public class StandaloneRunner {
             // Print metadata
             System.out.println();
             System.out.printf("--- tokens: %d in / %d out | cost: $%.6f | end_turn: %s ---%n",
-                    response.inputTokens(),
-                    response.outputTokens(),
-                    response.cost(),
+                    response.thinkInputTokens(),
+                    response.thinkOutputTokens(),
+                    response.thinkCost(),
                     response.endTurn());
 
         } catch (Exception e) {

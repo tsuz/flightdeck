@@ -133,10 +133,9 @@ public class EndTurnProcessor {
                 sessionId,
                 response.userId(),
                 content,
-                1,                          // this response represents one LLM call
-                response.inputTokens(),
-                response.outputTokens(),
-                totalCost(response.prevSessionCost(), response.cost()),
+                response.thinkInputTokens(),
+                response.thinkOutputTokens(),
+                response.totalSessionCost(),
                 sourceAgent,
                 Instant.now().toString()
         );
@@ -147,16 +146,6 @@ public class EndTurnProcessor {
      * Returns an empty string if the list is null, empty, or contains no
      * assistant messages.
      */
-    /**
-     * Computes total session cost: prev_session_cost + current call cost.
-     * Returns null if both are null.
-     */
-    static Double totalCost(Double prevSessionCost, Double callCost) {
-        if (prevSessionCost == null && callCost == null) return null;
-        return (prevSessionCost != null ? prevSessionCost : 0.0)
-             + (callCost != null ? callCost : 0.0);
-    }
-
     static String assembleContent(List<MessageInput> messages) {
         if (messages == null || messages.isEmpty()) return "";
 

@@ -118,11 +118,20 @@ public class ClaudeApiService implements LlmApiService {
                                           String sessionId,
                                           String userId) {
         try {
+            // Pack the entire conversation into a single user message.
+            // Claude requires the first message to be role: "user".
+            StringBuilder conversationText = new StringBuilder();
+            for (Map<String, Object> msg : messages) {
+                String role = String.valueOf(msg.getOrDefault("role", "user"));
+                String text = String.valueOf(msg.getOrDefault("content", ""));
+                conversationText.append(role.toUpperCase()).append(": ").append(text).append("\n\n");
+            }
+
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
             body.put("max_tokens", maxTokens);
             body.put("system", systemPrompt);
-            body.put("messages", messages);
+            body.put("messages", List.of(Map.of("role", "user", "content", conversationText.toString())));
             // No tools
 
             String requestBody = mapper.writeValueAsString(body);

@@ -146,10 +146,9 @@ class TestParseResponse:
 
         assert result["cost"] is None  # No pricing env vars set
         assert len(result["toolUses"]) == 0
-        # messages[0] = latest_input, messages[1] = assistant text
-        assert result["messages"][0] == {"content": "check order"}
-        assert result["messages"][1]["content"] == "Your order is shipped."
-        assert result["messages"][1]["role"] == "assistant"
+        assert len(result["messages"]) == 1
+        assert result["messages"][0]["content"] == "Your order is shipped."
+        assert result["messages"][0]["role"] == "assistant"
 
     def test_tool_use_response(self):
         runner = make_runner()
@@ -334,9 +333,9 @@ class TestParseGeminiResponse:
         assert result["inputTokens"] == 100
         assert result["outputTokens"] == 50
         assert len(result["toolUses"]) == 0
-        # messages[0] = latest_input, messages[1] = assistant text
-        assert result["messages"][1]["role"] == "assistant"
-        assert result["messages"][1]["content"] == "Hello from Gemini"
+        assert len(result["messages"]) == 1
+        assert result["messages"][0]["role"] == "assistant"
+        assert result["messages"][0]["content"] == "Hello from Gemini"
 
     def test_function_call_response(self):
         runner = make_runner(llm_provider="gemini", gemini_api_key="test-key")

@@ -1,0 +1,298 @@
+services:
+
+  # ─── Shared Infrastructure ──────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:4.1.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ROUTER AGENT (user-facing)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  router-api:
+    image: ghcr.io/tsuz/flightdeck/chat-api:${FLIGHTDECK_VERSION:-latest}
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    networks:
+      default:
+        aliases:
+          - api
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: router
+      PORT: 8000
+      WS_PORT: 8001
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  router-processing:
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: router
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  router-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./router/tools.json:/app/tools.json:ro
+      - ./router/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: router
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${ROUTER_CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-}
+      COMPACTION_USER_MESSAGE_TRIGGER: ${COMPACTION_USER_MESSAGE_TRIGGER:--1}
+      COMPACTION_USER_MESSAGE_UNTIL: ${COMPACTION_USER_MESSAGE_UNTIL:-2}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  router-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/helpdesk-router/router/router-tool-service/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: router
+      SPECIALIST_MAP: it=it-agent,hr=hr-agent,facilities=facilities-agent,finance=finance-agent
+      RESPONSE_TIMEOUT_SECONDS: 120
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
+    ports:
+      - "80:80"
+    depends_on:
+      - router-api
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # IT AGENT (headless)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  it-agent-processing:
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: it-agent
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  it-agent-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./it-agent/tools.json:/app/tools.json:ro
+      - ./it-agent/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: it-agent
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${IT_CLAUDE_MODEL:-claude-sonnet-4-5}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-3}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-15}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-}
+      COMPACTION_USER_MESSAGE_TRIGGER: ${COMPACTION_USER_MESSAGE_TRIGGER:--1}
+      COMPACTION_USER_MESSAGE_UNTIL: ${COMPACTION_USER_MESSAGE_UNTIL:-2}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  it-agent-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/helpdesk-router/it-agent/tool-service/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: it-agent
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # HR AGENT (headless)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  hr-agent-processing:
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: hr-agent
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  hr-agent-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./hr-agent/tools.json:/app/tools.json:ro
+      - ./hr-agent/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: hr-agent
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${HR_CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-}
+      COMPACTION_USER_MESSAGE_TRIGGER: ${COMPACTION_USER_MESSAGE_TRIGGER:--1}
+      COMPACTION_USER_MESSAGE_UNTIL: ${COMPACTION_USER_MESSAGE_UNTIL:-2}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  hr-agent-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/helpdesk-router/hr-agent/tool-service/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: hr-agent
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FACILITIES AGENT (headless)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  facilities-agent-processing:
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: facilities-agent
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  facilities-agent-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./facilities-agent/tools.json:/app/tools.json:ro
+      - ./facilities-agent/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: facilities-agent
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${FACILITIES_CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-}
+      COMPACTION_USER_MESSAGE_TRIGGER: ${COMPACTION_USER_MESSAGE_TRIGGER:--1}
+      COMPACTION_USER_MESSAGE_UNTIL: ${COMPACTION_USER_MESSAGE_UNTIL:-2}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  facilities-agent-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/helpdesk-router/facilities-agent/tool-service/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: facilities-agent
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FINANCE AGENT (headless)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  finance-agent-processing:
+    image: ghcr.io/tsuz/flightdeck/processing:${FLIGHTDECK_VERSION:-latest}
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: finance-agent
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  finance-agent-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./finance-agent/tools.json:/app/tools.json:ro
+      - ./finance-agent/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: finance-agent
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${FINANCE_CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-}
+      COMPACTION_USER_MESSAGE_TRIGGER: ${COMPACTION_USER_MESSAGE_TRIGGER:--1}
+      COMPACTION_USER_MESSAGE_UNTIL: ${COMPACTION_USER_MESSAGE_UNTIL:-2}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  finance-agent-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/helpdesk-router/finance-agent/tool-service/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: finance-agent
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+volumes:
+  kafka-data:

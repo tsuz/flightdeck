@@ -28,6 +28,7 @@ public class KafkaMessageProducer {
 
     public KafkaMessageProducer() {
         Properties props = new Properties();
+        KafkaEnvProps.apply(props);
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());

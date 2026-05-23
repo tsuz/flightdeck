@@ -10,6 +10,8 @@ from typing import Any, Callable, Optional
 
 from confluent_kafka import Consumer, Producer, TopicPartition
 
+from .kafka_env_props import kafka_env_props
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,7 +86,10 @@ class ThinkConsumerRunner:
                 raise ValueError("claude_api_key is required when llm_provider='claude'")
             logger.info("Using Claude LLM provider (model=%s)", config.claude_model)
 
+        env_props = kafka_env_props()
+
         self._consumer = Consumer({
+            **env_props,
             "bootstrap.servers": config.brokers,
             "group.id": config.group_id,
             "auto.offset.reset": "earliest",
@@ -94,6 +99,7 @@ class ThinkConsumerRunner:
         })
 
         self._producer = Producer({
+            **env_props,
             "bootstrap.servers": config.brokers,
             "acks": "all",
             "enable.idempotence": True,

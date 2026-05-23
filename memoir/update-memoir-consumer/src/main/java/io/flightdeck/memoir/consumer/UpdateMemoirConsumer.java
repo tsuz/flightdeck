@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.flightdeck.memoir.config.AppConfig;
+import io.flightdeck.memoir.config.KafkaEnvProps;
 import io.flightdeck.memoir.model.MemoirSessionEnd;
 import io.flightdeck.memoir.service.ClaudeMemoirService;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -124,6 +125,7 @@ public class UpdateMemoirConsumer implements AutoCloseable {
 
     private static KafkaConsumer<String, String> createConsumer() {
         Properties props = new Properties();
+        KafkaEnvProps.apply(props);
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, AppConfig.BOOTSTRAP_SERVERS);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, AppConfig.CONSUMER_GROUP);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -136,6 +138,7 @@ public class UpdateMemoirConsumer implements AutoCloseable {
 
     private static KafkaProducer<String, String> createProducer() {
         Properties props = new Properties();
+        KafkaEnvProps.apply(props);
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, AppConfig.BOOTSTRAP_SERVERS);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());

@@ -23,7 +23,7 @@ import urllib.request
 from confluent_kafka import Consumer, TopicPartition, KafkaException
 from confluent_kafka.admin import AdminClient
 
-from flightdeck_sdk import ToolConsumerRunner, ToolConsumerConfig
+from flightdeck_sdk import ToolConsumerRunner, ToolConsumerConfig, kafka_env_props
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ RAG_API_URL = os.environ.get("RAG_API_URL", "")
 
 # ── Admin client for the monitored cluster ───────────────────────────────────
 
-admin = AdminClient({"bootstrap.servers": TARGET_BOOTSTRAP})
+admin = AdminClient({**kafka_env_props(), "bootstrap.servers": TARGET_BOOTSTRAP})
 
 # ── Kafka ops tools ──────────────────────────────────────────────────────────
 
@@ -136,6 +136,7 @@ def kafka_consumer_group_lag(input_data):
         cg_tp = future[group_id].result(timeout=10)
 
         lag_consumer = Consumer({
+            **kafka_env_props(),
             "bootstrap.servers": TARGET_BOOTSTRAP,
             "group.id": f"_lag_checker_{group_id}",
             "enable.auto.commit": False,

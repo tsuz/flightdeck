@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 from confluent_kafka import Consumer, Producer
 
+from .kafka_env_props import kafka_env_props
 from .message_context import KafkaMessageContext
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,10 @@ class ToolConsumerRunner:
         self._config = config
         self._running = False
 
+        env_props = kafka_env_props()
+
         self._consumer = Consumer({
+            **env_props,
             "bootstrap.servers": config.brokers,
             "group.id": config.group_id,
             "auto.offset.reset": "earliest",
@@ -51,6 +55,7 @@ class ToolConsumerRunner:
         })
 
         self._producer = Producer({
+            **env_props,
             "bootstrap.servers": config.brokers,
             "acks": "all",
             "enable.idempotence": True,

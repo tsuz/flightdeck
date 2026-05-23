@@ -146,6 +146,7 @@ public class FlightDeckStreamsApp {
         String bootstrapServers = streamsProps.getProperty(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG);
 
         Properties adminProps = new Properties();
+        KafkaEnvProps.apply(adminProps);
         adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
 
         List<String> requiredTopics = new java.util.ArrayList<>(List.of(
@@ -207,6 +208,7 @@ public class FlightDeckStreamsApp {
         }
 
         Properties p = new Properties();
+        KafkaEnvProps.apply(p);
         p.put(StreamsConfig.APPLICATION_ID_CONFIG, Topics.AGENT_NAME + "-streams");
         p.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         p.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG,

@@ -55,6 +55,7 @@ public class PipelineConsumer implements Runnable {
     @Override
     public void run() {
         Properties props = new Properties();
+        KafkaEnvProps.apply(props);
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, CONSUMER_GROUP);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());

@@ -1,10 +1,9 @@
 services:
 
-  # ─── Application Services (built from local source) ─────────────────────────
+  # ─── Application Services (pulled from ghcr.io) ─────────────────────────────
 
   api:
-    build:
-      context: ../../api/chat-api
+    image: ghcr.io/tsuz/flightdeck/chat-api:0.0.2
     ports:
       - "8002:8000"
       - "8003:8001"
@@ -19,8 +18,7 @@ services:
       KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${CONFLUENT_API_KEY}" password="${CONFLUENT_API_SECRET}";'
 
   processing:
-    build:
-      context: ../../processor-apps/processing
+    image: ghcr.io/tsuz/flightdeck/processing:0.0.2
     environment:
       AGENT_NAME: ${AGENT_NAME:-lead-followup}
       MEMOIR_ENABLED: "false"
@@ -33,8 +31,7 @@ services:
       KAFKA_REPLICATION_FACTOR: "3"
 
   think-consumer:
-    build:
-      context: ../../think/think-consumer
+    image: ghcr.io/tsuz/flightdeck/think-consumer:0.0.2
     volumes:
       - ./tools.json:/app/tools.json:ro
       - ./system-prompt.txt:/app/system-prompt.txt:ro
@@ -70,8 +67,7 @@ services:
   # ─── Frontend ────────────────────────────────────────────────────────────────
 
   frontend:
-    build:
-      context: ../../frontend
+    image: ghcr.io/tsuz/flightdeck/frontend:0.0.2
     ports:
       - "8080:80"
     depends_on:

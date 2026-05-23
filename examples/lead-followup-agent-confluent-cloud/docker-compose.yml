@@ -1,0 +1,78 @@
+services:
+
+  # ─── Application Services (built from local source) ─────────────────────────
+
+  api:
+    build:
+      context: ../../api/chat-api
+    ports:
+      - "8002:8000"
+      - "8003:8001"
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-lead-followup}
+      PORT: 8000
+      WS_PORT: 8001
+      # Confluent Cloud connection (Java client — uses JAAS)
+      KAFKA_BOOTSTRAP_SERVERS: ${CONFLUENT_BOOTSTRAP_SERVERS}
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${CONFLUENT_API_KEY}" password="${CONFLUENT_API_SECRET}";'
+
+  processing:
+    build:
+      context: ../../processor-apps/processing
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-lead-followup}
+      MEMOIR_ENABLED: "false"
+      # Confluent Cloud connection (Java client — uses JAAS)
+      KAFKA_BOOTSTRAP_SERVERS: ${CONFLUENT_BOOTSTRAP_SERVERS}
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${CONFLUENT_API_KEY}" password="${CONFLUENT_API_SECRET}";'
+      # Confluent Cloud requires RF >= 3 for Streams internal/changelog topics
+      KAFKA_REPLICATION_FACTOR: "3"
+
+  think-consumer:
+    build:
+      context: ../../think/think-consumer
+    volumes:
+      - ./tools.json:/app/tools.json:ro
+      - ./system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-lead-followup}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-0.5}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+      # Confluent Cloud connection (Java client — uses JAAS)
+      KAFKA_BOOTSTRAP_SERVERS: ${CONFLUENT_BOOTSTRAP_SERVERS}
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${CONFLUENT_API_KEY}" password="${CONFLUENT_API_SECRET}";'
+
+  lead-tool-service:
+    build:
+      context: ../..
+      dockerfile: examples/lead-followup-agent-confluent-cloud/lead-tool-service/Dockerfile
+    environment:
+      AGENT_NAME: ${AGENT_NAME:-lead-followup}
+      # Confluent Cloud connection (Python / librdkafka — uses sasl.username + sasl.password)
+      KAFKA_BOOTSTRAP_SERVERS: ${CONFLUENT_BOOTSTRAP_SERVERS}
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${CONFLUENT_API_KEY}
+      KAFKA_SASL_PASSWORD: ${CONFLUENT_API_SECRET}
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ../../frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api

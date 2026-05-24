@@ -149,6 +149,11 @@ public class FlightDeckStreamsApp {
         KafkaEnvProps.apply(adminProps);
         adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
 
+        int partitions = Integer.parseInt(
+                System.getenv().getOrDefault("KAFKA_TOPIC_PARTITIONS", "1"));
+        short replicationFactor = Short.parseShort(
+                System.getenv().getOrDefault("KAFKA_TOPIC_REPLICATION_FACTOR", "3"));
+
         List<String> requiredTopics = new java.util.ArrayList<>(List.of(
                 Topics.MESSAGE_INPUT,
                 Topics.ENRICHED_MESSAGE_INPUT,
@@ -174,7 +179,7 @@ public class FlightDeckStreamsApp {
 
             List<NewTopic> toCreate = requiredTopics.stream()
                     .filter(t -> !existing.contains(t))
-                    .map(t -> new NewTopic(t, 1, (short) 1))
+                    .map(t -> new NewTopic(t, partitions, replicationFactor))
                     .collect(Collectors.toList());
 
             if (!toCreate.isEmpty()) {

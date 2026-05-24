@@ -47,7 +47,7 @@ public class ThinkConsumer implements AutoCloseable {
 
             Be concise and helpful. When using tools, explain what you're doing and why.""";
 
-    private static final String SYSTEM_PROMPT_TEMPLATE = loadSystemPromptTemplate() + "\n\n%s";
+    private static final String SYSTEM_PROMPT_BASE = loadSystemPromptTemplate();
 
     private static String loadSystemPromptTemplate() {
         return loadSystemPromptFromFile(AppConfig.SYSTEM_PROMPT_FILE);
@@ -353,15 +353,19 @@ public class ThinkConsumer implements AutoCloseable {
      * Builds the system prompt, injecting memoir context if available.
      */
     static String buildSystemPrompt(String memoirContext) {
-        StringBuilder extra = new StringBuilder();
+        return buildSystemPrompt(SYSTEM_PROMPT_BASE, memoirContext);
+    }
+
+    static String buildSystemPrompt(String basePrompt, String memoirContext) {
+        StringBuilder out = new StringBuilder(basePrompt).append("\n\n");
 
         if (memoirContext != null && !memoirContext.isBlank()) {
-            extra.append("\n\nUser memoir (known facts about this user from previous sessions):\n");
-            extra.append(memoirContext);
-            extra.append("\n\nUse the memoir to personalize your responses.");
+            out.append("\n\nUser memoir (known facts about this user from previous sessions):\n");
+            out.append(memoirContext);
+            out.append("\n\nUse the memoir to personalize your responses.");
         }
 
-        return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());
+        return out.toString();
     }
 
     /**

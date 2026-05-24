@@ -353,6 +353,10 @@ public class ThinkConsumer implements AutoCloseable {
      * Builds the system prompt, injecting memoir context if available.
      */
     static String buildSystemPrompt(String memoirContext) {
+        return buildSystemPrompt(SYSTEM_PROMPT_TEMPLATE, memoirContext);
+    }
+
+    static String buildSystemPrompt(String template, String memoirContext) {
         StringBuilder extra = new StringBuilder();
 
         if (memoirContext != null && !memoirContext.isBlank()) {
@@ -361,7 +365,7 @@ public class ThinkConsumer implements AutoCloseable {
             extra.append("\n\nUse the memoir to personalize your responses.");
         }
 
-        return String.format(SYSTEM_PROMPT_TEMPLATE, extra.toString());
+        return String.format(template, extra.toString());
     }
 
     /**

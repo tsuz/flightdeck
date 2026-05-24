@@ -36,4 +36,17 @@ class SystemPromptTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SYSTEM_PROMPT_FILE not found");
     }
+
+    @Test
+    @DisplayName("System prompt containing % character is preserved literally (issue #23)")
+    void percentSign_inPrompt_doesNotThrow() {
+        // Simulates what loadSystemPromptTemplate() + "\n\n%s" produces when
+        // the loaded user prompt contains a literal '%' (e.g. "10% off").
+        String basePrompt = "Apply a 10% discount when asked.";
+        String template = basePrompt + "\n\n%s";
+
+        String result = ThinkConsumer.buildSystemPrompt(template, null);
+
+        assertThat(result).contains("10% discount");
+    }
 }

@@ -40,6 +40,10 @@ public final class AppConfig {
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
 
+    // Enable Anthropic prompt caching (cache_control breakpoints). Off by default.
+    public static final boolean PROMPT_CACHING =
+            Boolean.parseBoolean(env("PROMPT_CACHING", "false"));
+
     // ── Gemini API ──────────────────────────────────────────────────────────
     public static final String GEMINI_API_KEY =
             env("GEMINI_API_KEY", "");

@@ -130,7 +130,8 @@ public class ClaudeApiService implements LlmApiService {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
             body.put("max_tokens", maxTokens);
-            body.put("system", systemPrompt);
+            // Cache the system prompt when enabled (see buildRequestBody). No tools to cache here.
+            body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
             body.put("messages", List.of(Map.of("role", "user", "content", conversationText.toString())));
             // No tools
 
@@ -167,7 +168,11 @@ public class ClaudeApiService implements LlmApiService {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("max_tokens", maxTokens);
-        body.put("system", systemPrompt);
+        // Send the system prompt as a content block. When PROMPT_CACHING is enabled a
+        // cache_control breakpoint is added so the static prefix (tools + system) is cached;
+        // a single breakpoint here covers the tools below it in the
+        // tools -> system -> messages cache order.
+        body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
         body.put("messages", messages);
 
         List<Map<String, Object>> tools = ToolDefinitions.getTools();
@@ -179,20 +184,45 @@ public class ClaudeApiService implements LlmApiService {
     }
 
     /**
+     * Builds the {@code system} field as a content-block list. When {@code promptCaching}
+     * is enabled, a {@code cache_control} ephemeral breakpoint is attached so the static
+     * prefix is cached; otherwise the block is sent without it. Note: Anthropic only caches
+     * when the prefix exceeds the model's minimum cacheable length (e.g. 4,096 tokens for
+     * Claude Haiku 4.5), so small prompts are never cached even with the flag on.
+     */
+    static List<Map<String, Object>> buildSystemBlocks(String systemPrompt, boolean promptCaching) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("type", "text");
+        block.put("text", systemPrompt);
+        if (promptCaching) {
+            block.put("cache_control", Map.of("type", "ephemeral"));
+        }
+        return List.of(block);
+    }
+
+    /**
      * Parses the Claude API response JSON into a ThinkResponse.
      */
     ThinkResponse parseResponse(String responseBody, String sessionId, String userId) {
         try {
             JsonNode root = mapper.readTree(responseBody);
 
-            // Extract token usage
+            // Extract token usage. With prompt caching enabled, cached tokens are reported
+            // separately and are NOT included in input_tokens, so they must be priced too.
             JsonNode usage = root.get("usage");
             int inputTokens = usage != null ? usage.path("input_tokens").asInt(0) : 0;
             int outputTokens = usage != null ? usage.path("output_tokens").asInt(0) : 0;
+            int cacheCreationTokens = usage != null ? usage.path("cache_creation_input_tokens").asInt(0) : 0;
+            int cacheReadTokens = usage != null ? usage.path("cache_read_input_tokens").asInt(0) : 0;
+            boolean cacheHit = cacheReadTokens > 0;
 
-            // Calculate cost (null if pricing env vars not set)
+            // Calculate cost (null if pricing env vars not set).
+            // Cache writes are billed at ~1.25x and cache reads at ~0.1x of the base input price.
             Double cost = (INPUT_TOKEN_PRICE != null && OUTPUT_TOKEN_PRICE != null)
-                    ? (inputTokens / 1_000_000.0 * INPUT_TOKEN_PRICE) + (outputTokens / 1_000_000.0 * OUTPUT_TOKEN_PRICE)
+                    ? (inputTokens / 1_000_000.0 * INPUT_TOKEN_PRICE)
+                            + (cacheCreationTokens / 1_000_000.0 * INPUT_TOKEN_PRICE * 1.25)
+                            + (cacheReadTokens / 1_000_000.0 * INPUT_TOKEN_PRICE * 0.1)
+                            + (outputTokens / 1_000_000.0 * OUTPUT_TOKEN_PRICE)
                     : null;
 
             // Determine if this is an end turn
@@ -270,8 +300,9 @@ public class ClaudeApiService implements LlmApiService {
                 }
             }
 
-            log.info("[{}] Claude response: input_tokens={} output_tokens={} tool_uses={} end_turn={} cost={}",
-                    sessionId, inputTokens, outputTokens, toolUses.size(), endTurn,
+            log.info("[{}] Claude response: input_tokens={} output_tokens={} cache_write={} cache_read={} cache_hit={} tool_uses={} end_turn={} cost={}",
+                    sessionId, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, cacheHit,
+                    toolUses.size(), endTurn,
                     cost != null ? String.format("$%.6f", cost) : "null");
 
             return new ThinkResponse(

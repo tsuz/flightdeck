@@ -25,6 +25,9 @@ class ThinkConsumerConfig:
     claude_model: str = "claude-haiku-4-5-20251001"
     claude_max_tokens: int = 4096
     claude_api_url: str = "https://api.anthropic.com/v1/messages"
+    # Enable Anthropic prompt caching (cache_control breakpoints). Defaults from the
+    # PROMPT_CACHING env var (off unless set to "true"); can be overridden explicitly.
+    prompt_caching: bool = os.environ.get("PROMPT_CACHING", "false").lower() == "true"
     poll_timeout_s: float = 1.0
     system_prompt_builder: Optional[Callable[[str, dict], str]] = None
     llm_provider: str = "claude"
@@ -329,10 +332,21 @@ class ThinkConsumerRunner:
             messages.append({"role": role, "content": text})
 
     def _call_claude(self, system_prompt: str, messages: list[dict], *, include_tools: bool = True) -> dict:
+        system: Any = system_prompt
+        if self._config.prompt_caching:
+            # Add a cache_control breakpoint so the static prefix can be cached.
+            system = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
         body: dict[str, Any] = {
             "model": self._config.claude_model,
             "max_tokens": self._config.claude_max_tokens,
-            "system": system_prompt,
+            "system": system,
             "messages": messages,
         }
 

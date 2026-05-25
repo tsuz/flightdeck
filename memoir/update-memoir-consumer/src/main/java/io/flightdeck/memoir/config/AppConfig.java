@@ -28,6 +28,9 @@ public final class AppConfig {
             env("CLAUDE_MODEL", "claude-sonnet-4-20250514");
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
+    // Enable Anthropic prompt caching (cache_control breakpoints). Off by default.
+    public static final boolean PROMPT_CACHING =
+            Boolean.parseBoolean(env("PROMPT_CACHING", "false"));
 
     // ── Tuning ───────────────────────────────────────────────────────────────
     public static final long POLL_TIMEOUT_MS =

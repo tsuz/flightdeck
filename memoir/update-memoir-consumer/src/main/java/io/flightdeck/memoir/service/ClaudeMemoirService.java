@@ -69,7 +69,17 @@ public class ClaudeMemoirService {
             Map<String, Object> requestBody = new LinkedHashMap<>();
             requestBody.put("model", AppConfig.CLAUDE_MODEL);
             requestBody.put("max_tokens", AppConfig.CLAUDE_MAX_TOKENS);
-            requestBody.put("system", SYSTEM_PROMPT);
+            // When prompt caching is enabled, send the system prompt as a content block
+            // with a cache_control breakpoint; otherwise send it as a plain string.
+            if (AppConfig.PROMPT_CACHING) {
+                requestBody.put("system", List.of(Map.of(
+                        "type", "text",
+                        "text", SYSTEM_PROMPT,
+                        "cache_control", Map.of("type", "ephemeral")
+                )));
+            } else {
+                requestBody.put("system", SYSTEM_PROMPT);
+            }
             requestBody.put("messages", List.of(
                     Map.of("role", "user", "content", userMessage)
             ));

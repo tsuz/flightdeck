@@ -90,6 +90,7 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | `CLAUDE_API_KEY` | *(required for Claude)* | Your Anthropic API key |
 | `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model to use |
 | `CLAUDE_MAX_TOKENS` | `8096` | Max tokens per Claude response |
+| `PROMPT_CACHING` | `false` | Enable Anthropic prompt caching (adds a `cache_control` breakpoint to the system prompt). Only takes effect when the cached prefix exceeds the model's minimum cacheable length (e.g. 4,096 tokens for Haiku 4.5, 1,024 for Sonnet). |
 | `GEMINI_API_KEY` | *(required for Gemini)* | Your Google Gemini API key |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model to use |
 | `GEMINI_MAX_TOKENS` | `4096` | Max tokens per Gemini response |

@@ -131,7 +131,7 @@ public class ClaudeApiService implements LlmApiService {
             body.put("model", model);
             body.put("max_tokens", maxTokens);
             // Cache the system prompt when enabled (see buildRequestBody). No tools to cache here.
-            body.put("system", buildSystemBlocks(systemPrompt));
+            body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
             body.put("messages", List.of(Map.of("role", "user", "content", conversationText.toString())));
             // No tools
 
@@ -172,7 +172,7 @@ public class ClaudeApiService implements LlmApiService {
         // cache_control breakpoint is added so the static prefix (tools + system) is cached;
         // a single breakpoint here covers the tools below it in the
         // tools -> system -> messages cache order.
-        body.put("system", buildSystemBlocks(systemPrompt));
+        body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
         body.put("messages", messages);
 
         List<Map<String, Object>> tools = ToolDefinitions.getTools();
@@ -184,18 +184,17 @@ public class ClaudeApiService implements LlmApiService {
     }
 
     /**
-     * Builds the {@code system} field as a content-block list. When
-     * {@link AppConfig#PROMPT_CACHING} is enabled, a {@code cache_control} ephemeral
-     * breakpoint is attached so the static prefix is cached; otherwise the block is sent
-     * without it. Note: Anthropic only caches when the prefix exceeds the model's minimum
-     * cacheable length (e.g. 4,096 tokens for Claude Haiku 4.5), so small prompts are
-     * never cached even with the flag on.
+     * Builds the {@code system} field as a content-block list. When {@code promptCaching}
+     * is enabled, a {@code cache_control} ephemeral breakpoint is attached so the static
+     * prefix is cached; otherwise the block is sent without it. Note: Anthropic only caches
+     * when the prefix exceeds the model's minimum cacheable length (e.g. 4,096 tokens for
+     * Claude Haiku 4.5), so small prompts are never cached even with the flag on.
      */
-    private static List<Map<String, Object>> buildSystemBlocks(String systemPrompt) {
+    static List<Map<String, Object>> buildSystemBlocks(String systemPrompt, boolean promptCaching) {
         Map<String, Object> block = new LinkedHashMap<>();
         block.put("type", "text");
         block.put("text", systemPrompt);
-        if (AppConfig.PROMPT_CACHING) {
+        if (promptCaching) {
             block.put("cache_control", Map.of("type", "ephemeral"));
         }
         return List.of(block);

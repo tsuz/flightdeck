@@ -14,6 +14,8 @@ AI Agent framework that manages state, session context, and takes care of the in
 
 - Maintain session's context
 - Language Agnostic
+- Read prompt caching
+- Connect to any Kafka (underlying message infrastructure)
 - Cost tracking and budget limiting
 - Dashboard to track execution, decisions, and latency
 - High performance using stream processing

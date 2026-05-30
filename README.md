@@ -103,6 +103,14 @@ All configuration is done via environment variables in the `.env` file. See [`.e
 | `OUTPUT_TOKEN_PRICE` | *(optional)* | Price per 1M output tokens (e.g. `15` for $15/MTok). If not set, cost tracking is disabled. |
 | `BUDGET_PRICE_PER_SESSION` | *(optional)* | Maximum dollar cost allowed per session. When the session cost goes over this limit, the agent stops processing on the next Think layer. Requires token prices to be set. |
 
+#### Frontend
+
+The `frontend` service has its own configuration, set on that service in `docker-compose.yml` (injected at container startup — no rebuild needed).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WS_URL` | *(optional)* | Overrides the WebSocket endpoint the dashboard connects to (e.g. `wss://your-host/ws`). If unset, the URL is auto-detected from the page: `wss://` when served over HTTPS, `ws://` otherwise, against the page's own host at `/ws`. |
+
 ### Tests
 
 Requires Java 17+ and [Maven](https://maven.apache.org/install.html).

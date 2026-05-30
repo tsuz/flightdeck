@@ -24,6 +24,19 @@ import java.time.Instant;
  *   { "session_id": "...", "user_id": "user_42", "role": "user",
  *     "content": "hello", "timestamp": "...",
  *     "metadata": { "locale": "en-US", "client": "web" } }
+ *
+ * <p>For multi-agent calls the request may also carry a transport-level
+ * {@code reply} descriptor telling the pipeline where this session's terminal
+ * response should be delivered, e.g.:
+ * <pre>
+ *   { "session_id": "...", "content": "...",
+ *     "reply": { "type": "RESTAPI", "endpoint": "https://agent-a...",
+ *                "method": "POST", "path": "/api/tools/response",
+ *                "responseAsField": "result", "bearerToken": "&lt;HMAC&gt;" } }
+ * </pre>
+ * The {@code reply} object is NOT placed into the message content/metadata — it
+ * is written to the reply-to topic (keyed by session_id) so it never reaches the
+ * LLM. The agent processes the request as an ordinary chat.
  */
 public class ChatHandler implements HttpHandler {
 
@@ -31,9 +44,11 @@ public class ChatHandler implements HttpHandler {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private final KafkaMessageProducer producer;
+    private final ReplyToProducer replyToProducer;
 
-    public ChatHandler(KafkaMessageProducer producer) {
+    public ChatHandler(KafkaMessageProducer producer, ReplyToProducer replyToProducer) {
         this.producer = producer;
+        this.replyToProducer = replyToProducer;
     }
 
     @Override
@@ -58,6 +73,18 @@ public class ChatHandler implements HttpHandler {
 
             String sessionId = requireField(body, "session_id");
             String content = requireField(body, "content");
+
+            // Transport-level reply routing (multi-agent). Written to the reply-to
+            // topic keyed by session_id; never placed into the message content.
+            if (body.hasNonNull("reply")) {
+                JsonNode reply = body.get("reply");
+                if (!reply.isObject()) {
+                    throw new IllegalArgumentException("'reply' must be an object");
+                }
+                replyToProducer.send(sessionId, mapper.writeValueAsString(reply));
+                log.info("[{}] Stored reply-to descriptor (type={})",
+                        sessionId, reply.path("type").asText("?"));
+            }
 
             // Build the full message-input payload
             ObjectNode message = mapper.createObjectNode();

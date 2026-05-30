@@ -10,6 +10,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.test.TestRecord;
 import org.junit.jupiter.api.*;
 
@@ -32,7 +33,10 @@ class EndTurnProcessorTest {
         KStream<String, ThinkResponse> thinkStream = builder.stream(
                 Topics.THINK_REQUEST_RESPONSE,
                 Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
-        EndTurnProcessor.register(builder, thinkStream);
+        KTable<String, String> replyToTable = builder.table(
+                Topics.REPLY_TO,
+                Consumed.with(Serdes.String(), Serdes.String()));
+        EndTurnProcessor.register(builder, thinkStream, replyToTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-end-turn");

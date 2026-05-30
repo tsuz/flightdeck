@@ -21,12 +21,24 @@ public class ChatApiApp {
     private static final int WS_PORT = Integer.parseInt(env("WS_PORT", "8001"));
 
     public static void main(String[] args) throws Exception {
-        // 1. Kafka producer (chat → message-input)
+        // 1. Kafka producers (chat → message-input, async callbacks → tool-use-result,
+        //    multi-agent reply routes → reply-to)
         KafkaMessageProducer producer = new KafkaMessageProducer();
+        ToolResultProducer toolResultProducer = new ToolResultProducer();
+        ReplyToProducer replyToProducer = new ReplyToProducer();
+
+        // Shared secret for verifying async tool callback tokens. Optional —
+        // if unset, /api/tool/response rejects every callback.
+        String callbackSecret = env("TOOL_CALLBACK_SECRET", "");
+        if (callbackSecret.isBlank()) {
+            log.warn("TOOL_CALLBACK_SECRET is not set — /api/tool/response will reject all callbacks");
+        }
 
         // 2. HTTP server for REST API
         HttpServer httpServer = HttpServer.create(new InetSocketAddress(PORT), 0);
-        httpServer.createContext("/api/chat", new ChatHandler(producer));
+        httpServer.createContext("/api/chat", new ChatHandler(producer, replyToProducer));
+        httpServer.createContext("/api/tools/response",
+                new ToolResponseHandler(toolResultProducer, callbackSecret));
         httpServer.setExecutor(null);
         httpServer.start();
         log.info("HTTP server started on port {}", PORT);
@@ -35,8 +47,9 @@ public class ChatApiApp {
         ChatWebSocketServer wsServer = new ChatWebSocketServer(WS_PORT);
         wsServer.start();
 
-        // 4. Kafka consumer (message-output → WebSocket chat response)
-        OutputConsumer outputConsumer = new OutputConsumer(wsServer);
+        // 4. Kafka consumer (message-output → WebSocket chat response, or → HTTP
+        //    callback for sessions that carry a reply-to descriptor)
+        OutputConsumer outputConsumer = new OutputConsumer(wsServer, replyToProducer);
         Thread outputThread = new Thread(outputConsumer, "output-consumer");
         outputThread.setDaemon(true);
         outputThread.start();
@@ -55,6 +68,8 @@ public class ChatApiApp {
             try { wsServer.stop(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             httpServer.stop(2);
             producer.close();
+            toolResultProducer.close();
+            replyToProducer.close();
         }));
 
         log.info("Chat API ready — HTTP={} WS={}", PORT, WS_PORT);

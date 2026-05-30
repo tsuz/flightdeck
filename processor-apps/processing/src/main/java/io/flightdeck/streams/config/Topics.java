@@ -66,4 +66,15 @@ public final class Topics {
     // ── Outbound ──────────────────────────────────────────────────────────────
     /** Final responses sent back to the user-facing layer */
     public static final String MESSAGE_OUTPUT           = PREFIX + "message-output";
+
+    // ── Multi-agent reply routing ──────────────────────────────────────────────
+    /**
+     * Per-session reply-routing descriptors, keyed by session_id. Written by the
+     * chat-api {@code /api/chat} endpoint when an inbound request carries a
+     * {@code reply} object, joined into {@code message-output} at end-turn, and
+     * consumed by the chat-api OutputConsumer to deliver the response back to the
+     * caller. Compacted with a time-based retention ({@code REPLY_TO_STATE_TTL_MS})
+     * so stale routes are eventually dropped.
+     */
+    public static final String REPLY_TO                 = PREFIX + "reply-to";
 }

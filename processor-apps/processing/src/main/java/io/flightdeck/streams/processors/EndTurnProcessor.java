@@ -1,5 +1,6 @@
 package io.flightdeck.streams.processors;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.MessageInput;
 import io.flightdeck.streams.model.ThinkResponse;
@@ -7,14 +8,15 @@ import io.flightdeck.streams.model.UserResponse;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.kstream.Produced;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -59,6 +61,7 @@ import java.util.stream.Collectors;
 public class EndTurnProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(EndTurnProcessor.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** Role value that identifies LLM-generated content within a ThinkResponse. */
     static final String ROLE_ASSISTANT = "assistant";
@@ -69,7 +72,9 @@ public class EndTurnProcessor {
     /** Default source-agent tag when the ThinkResponse carries no agent identifier. */
     static final String DEFAULT_AGENT = "agent-1";
 
-    public static void register(StreamsBuilder builder, KStream<String, ThinkResponse> thinkStream) {
+    public static void register(StreamsBuilder builder,
+                                KStream<String, ThinkResponse> thinkStream,
+                                KTable<String, String> replyToTable) {
 
         thinkStream
                 // ── Step 1: filter — only fully-resolved end-turn responses ──
@@ -88,15 +93,20 @@ public class EndTurnProcessor {
                     return isEndTurn && noToolCalls;
                 })
 
-                // ── Step 2: transform ThinkResponse → UserResponse ───────────
-                .mapValues((sessionId, response) -> {
-                    UserResponse userResponse = toUserResponse(sessionId, response);
-                    log.info("[{}] End-turn → message-output  content_len={} cost={}",
-                            sessionId,
-                            userResponse.content().length(),
-                            userResponse.cost() != null ? String.format("$%.6f", userResponse.cost()) : "null");
-                    return userResponse;
-                })
+                // ── Step 2: left-join the per-session reply-to descriptor and
+                //            transform ThinkResponse → UserResponse. The reply
+                //            route is null for ordinary chats and present only
+                //            for multi-agent calls. ──────────────────────────
+                .leftJoin(replyToTable,
+                        (sessionId, response, replyJson) -> {
+                            UserResponse userResponse = toUserResponse(sessionId, response, replyJson);
+                            log.info("[{}] End-turn → message-output  content_len={} cost={} reply_to={}",
+                                    sessionId,
+                                    userResponse.content().length(),
+                                    userResponse.cost() != null ? String.format("$%.6f", userResponse.cost()) : "null",
+                                    userResponse.replyTo() != null);
+                            return userResponse;
+                        })
 
                 // ── Step 3: publish to message-output ────────────────────────
                 .to(Topics.MESSAGE_OUTPUT,
@@ -119,6 +129,16 @@ public class EndTurnProcessor {
      * </ul>
      */
     static UserResponse toUserResponse(String sessionId, ThinkResponse response) {
+        return toUserResponse(sessionId, response, null);
+    }
+
+    /**
+     * As {@link #toUserResponse(String, ThinkResponse)} but also embeds the
+     * transport-level reply-routing descriptor (raw JSON from the reply-to
+     * topic). {@code replyJson} is null for ordinary chats, in which case
+     * {@code replyTo} stays null and is omitted from the serialized output.
+     */
+    static UserResponse toUserResponse(String sessionId, ThinkResponse response, String replyJson) {
         String content = assembleContent(response.lastInputResponse());
 
         String sourceAgent = (response.lastInputResponse() != null)
@@ -137,8 +157,21 @@ public class EndTurnProcessor {
                 response.thinkOutputTokens(),
                 response.totalSessionCost(),
                 sourceAgent,
+                parseReply(replyJson),
                 Instant.now().toString()
         );
+    }
+
+    /** Parses the reply-to descriptor JSON into a map; null/blank/invalid → null. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> parseReply(String replyJson) {
+        if (replyJson == null || replyJson.isBlank()) return null;
+        try {
+            return MAPPER.readValue(replyJson, Map.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse reply-to descriptor — ignoring route: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "delegate_task",
+    "description": "Delegate a self-contained task to the worker agent and receive its completed result. Use this whenever the user asks for work that the specialist worker should handle. The worker is an independent agent; you hand it an instruction and its answer comes back to you. You may delegate more than one task.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string",
+          "description": "A clear, self-contained instruction for the worker agent. Include everything the worker needs — it has no access to this conversation."
+        }
+      },
+      "required": ["task"]
+    }
+  }
+]

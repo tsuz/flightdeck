@@ -1,0 +1,174 @@
+# Multi-agent setup — async tool delegation with reply routing.
+#
+# Two FlightDeck agents on one Kafka cluster:
+#   • orchestrator (user-facing) — delegates tasks to the worker via an async tool
+#   • worker       (headless)    — an ordinary agent that answers delegated tasks
+#
+# chat-api and processing are BUILT FROM SOURCE in this repo because this example
+# demonstrates functionality on the feat/multi-agent branch that is not in the
+# published images yet. think-consumer and frontend use published images.
+
+services:
+
+  # ─── Shared Infrastructure ──────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:4.1.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ORCHESTRATOR AGENT (user-facing, Agent A)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  orchestrator-api:
+    build:
+      context: ../../api/chat-api
+    image: flightdeck-multiagent/chat-api:local
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    networks:
+      default:
+        aliases:
+          - api
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: orchestrator
+      PORT: 8000
+      WS_PORT: 8001
+      # Required to verify async tool callbacks on /api/tools/response.
+      TOOL_CALLBACK_SECRET: ${TOOL_CALLBACK_SECRET}
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  orchestrator-processing:
+    build:
+      context: ../../processor-apps/processing
+    image: flightdeck-multiagent/processing:local
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: orchestrator
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  orchestrator-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./orchestrator/tools.json:/app/tools.json:ro
+      - ./orchestrator/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: orchestrator
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # The async multi-agent tool: dispatches delegate_task to the worker and acks
+  # "pending" — the result returns via the callback, not synchronously.
+  orchestrator-dispatcher:
+    build:
+      context: ../..
+      dockerfile: examples/multi-agent-setup/orchestrator/dispatcher/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: orchestrator
+      TOOL_CALLBACK_SECRET: ${TOOL_CALLBACK_SECRET}
+      TARGET_CHAT_URL: http://worker-api:8000/api/chat
+      CALLBACK_ENDPOINT: http://orchestrator-api:8000
+      CALLBACK_PATH: /api/tools/response
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
+    ports:
+      - "80:80"
+    depends_on:
+      - orchestrator-api
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # WORKER AGENT (headless, Agent B)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # The worker runs its own chat-api: it accepts /api/chat (with the reply
+  # descriptor) and its OutputConsumer POSTs the answer back to the orchestrator.
+  # No host ports are exposed — it is reached internally at worker-api:8000.
+  worker-api:
+    image: flightdeck-multiagent/chat-api:local
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: worker
+      PORT: 8000
+      WS_PORT: 8001
+    depends_on:
+      kafka:
+        condition: service_healthy
+      orchestrator-api:
+        condition: service_started
+
+  worker-processing:
+    image: flightdeck-multiagent/processing:local
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: worker
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      orchestrator-processing:
+        condition: service_started
+
+  worker-think:
+    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    volumes:
+      - ./worker/tools.json:/app/tools.json:ro
+      - ./worker/system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: worker
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+volumes:
+  kafka-data:

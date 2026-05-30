@@ -95,6 +95,10 @@ services:
     image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
     ports:
       - "80:80"
+    # WS_URL overrides the WebSocket endpoint at runtime. Leave unset to
+    # auto-detect (wss:// over HTTPS, ws:// otherwise) against the page host.
+    # environment:
+    #   WS_URL: wss://your-host/ws
     depends_on:
       - api
 

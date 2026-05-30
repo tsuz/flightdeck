@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WsMessage, ChatMessage, Conversation, LogEntry, PipelineEvent } from "./types";
 
-const WS_URL = `ws://${window.location.host}/ws`;
+// Precedence: runtime config (Docker env, see env.js) > build-time env var > auto-detect.
+const WS_URL =
+  (window.__ENV__?.WS_URL || undefined) ??
+  import.meta.env.VITE_WS_URL ??
+  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
 const RECONNECT_INTERVAL = 3000;
 
 function generateId(): string {

@@ -13,9 +13,8 @@ import java.util.Properties;
  * Produces async tool results to the Kafka {@code tool-use-result} topic — the
  * same topic the synchronous tool consumers write to. The record key is the
  * session_id so results co-partition with the aggregator's per-session store.
- *
  * <p>Fed by {@link ToolResponseHandler} when an external system calls back to
- * {@code POST /api/tool/response} with the result of an async tool.
+ * {@code POST /api/tools/response} with the result of an async tool.
  */
 public class ToolResultProducer {
 

@@ -10,9 +10,10 @@ calls `delegate_task`, the tool does NOT answer synchronously. Instead it:
      worker is a blind courier that just echoes the token back.
 
   2. POSTs the task to the worker agent's /api/chat with a transport-level
-     `reply` descriptor telling the worker where to send its answer (the
-     orchestrator's /api/tools/response callback), carrying the token as a
-     bearer credential. The reply descriptor never enters the worker's prompt.
+     `reply` descriptor naming the callback service to answer to (a logical name
+     the worker resolves to the orchestrator's URL via ALLOWED_HOST_MAPPING),
+     carrying the token as a bearer credential. The dispatcher never sends a URL,
+     and the reply descriptor never enters the worker's prompt.
 
   3. Commits the tool-use offset WITHOUT producing a tool-use-result. This is the
      "pending" ack: the dispatch is acknowledged so it is not redelivered, but no
@@ -34,8 +35,8 @@ Env vars:
     AGENT_NAME               orchestrator agent name (prefixes its topics)
     TOOL_CALLBACK_SECRET     shared HMAC secret (same as orchestrator chat-api)
     TARGET_CHAT_URL          worker /api/chat URL, e.g. http://worker-api:8000/api/chat
-    CALLBACK_ENDPOINT        orchestrator base URL, e.g. http://orchestrator-api:8000
-    CALLBACK_PATH            callback route (default /api/tools/response)
+    CALLBACK_SERVICE         logical callback-service name the worker maps to the
+                             orchestrator's URL via ALLOWED_HOST_MAPPING, e.g. "orchestrator"
     TOKEN_TTL_SEC            callback token lifetime in seconds (default 86400)
 """
 
@@ -55,8 +56,7 @@ KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 AGENT_NAME = os.environ["AGENT_NAME"]
 SECRET = os.environ["TOOL_CALLBACK_SECRET"]
 TARGET_CHAT_URL = os.environ["TARGET_CHAT_URL"]
-CALLBACK_ENDPOINT = os.environ["CALLBACK_ENDPOINT"]
-CALLBACK_PATH = os.environ.get("CALLBACK_PATH", "/api/tools/response")
+CALLBACK_SERVICE = os.environ["CALLBACK_SERVICE"]
 TOKEN_TTL_SEC = int(os.environ.get("TOKEN_TTL_SEC", "86400"))
 
 INPUT_TOPIC = f"{AGENT_NAME}-tool-use"
@@ -106,11 +106,7 @@ def dispatch(tool_use):
         "session_id": worker_session,
         "content": task,
         "reply": {
-            "type": "RESTAPI",
-            "endpoint": CALLBACK_ENDPOINT,
-            "method": "POST",
-            "path": CALLBACK_PATH,
-            "responseAsField": "result",
+            "callbackService": CALLBACK_SERVICE,
             "bearerToken": token,
         },
     }
@@ -135,7 +131,7 @@ def main():
     consumer.subscribe([INPUT_TOPIC])
     print(f"Orchestrator dispatcher started — listening on [{INPUT_TOPIC}]", flush=True)
     print(f"  target chat : {TARGET_CHAT_URL}", flush=True)
-    print(f"  callback    : {CALLBACK_ENDPOINT}{CALLBACK_PATH}", flush=True)
+    print(f"  callback svc: {CALLBACK_SERVICE} (resolved by worker via ALLOWED_HOST_MAPPING)", flush=True)
 
     try:
         while True:

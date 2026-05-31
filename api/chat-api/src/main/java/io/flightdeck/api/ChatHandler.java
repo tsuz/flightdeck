@@ -26,14 +26,16 @@ import java.time.Instant;
  *     "metadata": { "locale": "en-US", "client": "web" } }
  *
  * <p>For multi-agent calls the request may also carry a transport-level
- * {@code reply} descriptor telling the pipeline where this session's terminal
- * response should be delivered, e.g.:
+ * {@code reply} descriptor naming where this session's terminal response should
+ * be delivered, e.g.:
  * <pre>
  *   { "session_id": "...", "content": "...",
- *     "reply": { "type": "RESTAPI", "endpoint": "https://agent-a...",
- *                "method": "POST", "path": "/api/tools/response",
- *                "responseAsField": "result", "bearerToken": "&lt;HMAC&gt;" } }
+ *     "reply": { "callbackService": "my-agent-a", "bearerToken": "&lt;HMAC&gt;" } }
  * </pre>
+ * {@code callbackService} is a logical name resolved server-side against
+ * {@code ALLOWED_HOST_MAPPING} ({@link CallbackRegistry}); the caller never
+ * supplies a URL, so the descriptor cannot steer the callback at an arbitrary
+ * host. Unknown names are rejected here with a 400.
  * The {@code reply} object is NOT placed into the message content/metadata — it
  * is written to the reply-to topic (keyed by session_id) so it never reaches the
  * LLM. The agent processes the request as an ordinary chat.
@@ -81,9 +83,19 @@ public class ChatHandler implements HttpHandler {
                 if (!reply.isObject()) {
                     throw new IllegalArgumentException("'reply' must be an object");
                 }
+                String callbackService = reply.path("callbackService").asText("");
+                if (callbackService.isBlank()) {
+                    throw new IllegalArgumentException("'reply' must include 'callbackService'");
+                }
+                // Fail closed: reject a descriptor naming a service this agent is not
+                // configured to call back, so unroutable routes never reach the
+                // reply-to topic and the caller gets an immediate 400.
+                if (!CallbackRegistry.isKnown(callbackService)) {
+                    throw new IllegalArgumentException("unknown callbackService: " + callbackService);
+                }
                 replyToProducer.send(sessionId, mapper.writeValueAsString(reply));
-                log.info("[{}] Stored reply-to descriptor (type={})",
-                        sessionId, reply.path("type").asText("?"));
+                log.info("[{}] Stored reply-to descriptor (callbackService={})",
+                        sessionId, callbackService);
             }
 
             // Build the full message-input payload

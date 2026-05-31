@@ -26,10 +26,12 @@ import java.util.Properties;
  *   <li><b>WebSocket</b> — the default. Forwarded to connected browser clients
  *       via {@link ChatWebSocketServer}.</li>
  *   <li><b>HTTP callback</b> — when the record carries a {@code reply_to}
- *       descriptor (a multi-agent call). The response is POSTed back to the
- *       calling agent's endpoint with the HMAC token as a bearer credential.
- *       On success the reply-to route is tombstoned so the one-shot call cannot
- *       be double-delivered.</li>
+ *       descriptor (a multi-agent call). The descriptor's {@code callbackService}
+ *       is resolved to a trusted base URL via {@link CallbackRegistry}
+ *       ({@code ALLOWED_HOST_MAPPING}) and the response is POSTed to that host's
+ *       fixed callback path with the HMAC token as a bearer credential. On success
+ *       the reply-to route is tombstoned so the one-shot call cannot be
+ *       double-delivered.</li>
  * </ul>
  *
  * <h3>Retry policy for HTTP callbacks</h3>
@@ -118,7 +120,7 @@ public class OutputConsumer implements Runnable {
             }
         }
 
-        if (replyTo != null && "RESTAPI".equalsIgnoreCase(replyTo.path("type").asText())) {
+        if (replyTo != null && !replyTo.path("callbackService").asText("").isBlank()) {
             log.info("[{}] Delivering response via HTTP callback", sessionId);
             deliverHttp(sessionId, value, replyTo);
         } else {
@@ -181,19 +183,20 @@ public class OutputConsumer implements Runnable {
 
     /** Builds the callback HTTP request from the reply-to descriptor and the response body. */
     private HttpRequest buildRequest(String value, JsonNode replyTo) throws Exception {
-        String endpoint = replyTo.path("endpoint").asText("");
-        String path = replyTo.path("path").asText("");
-        String method = replyTo.path("method").asText("POST");
+        String callbackService = replyTo.path("callbackService").asText("");
         String bearerToken = replyTo.path("bearerToken").asText("");
-        String responseField = replyTo.path("responseAsField").asText(DEFAULT_RESPONSE_FIELD);
 
-        if (endpoint.isBlank()) {
-            throw new IllegalArgumentException("reply-to descriptor missing 'endpoint'");
+        if (callbackService.isBlank()) {
+            throw new IllegalArgumentException("reply-to descriptor missing 'callbackService'");
         }
 
-        String url = joinUrl(endpoint, path);
+        // The caller supplies only a logical service name; the destination URL is
+        // resolved from operator-controlled config (ALLOWED_HOST_MAPPING) and the
+        // path is fixed, so a caller can never steer this request at an arbitrary
+        // host. Throws if the name is not configured — fail closed.
+        String url = CallbackRegistry.resolve(callbackService);
 
-        // The agent's free-form answer goes under the caller-specified field name.
+        // The agent's free-form answer goes under the default response field.
         String content = "";
         try {
             JsonNode root = mapper.readTree(value);
@@ -202,24 +205,17 @@ public class OutputConsumer implements Runnable {
             // value already validated upstream; fall through with empty content
         }
         String body = mapper.writeValueAsString(
-                mapper.createObjectNode().put(responseField, content));
+                mapper.createObjectNode().put(DEFAULT_RESPONSE_FIELD, content));
 
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json")
-                .method(method.toUpperCase(), HttpRequest.BodyPublishers.ofString(body));
+                .POST(HttpRequest.BodyPublishers.ofString(body));
         if (!bearerToken.isBlank()) {
             b.header("Authorization", "Bearer " + bearerToken);
         }
         return b.build();
-    }
-
-    private static String joinUrl(String endpoint, String path) {
-        if (path == null || path.isBlank()) return endpoint;
-        String base = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
-        String p = path.startsWith("/") ? path : "/" + path;
-        return base + p;
     }
 
     private static boolean isRetriable(int code) {

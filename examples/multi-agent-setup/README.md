@@ -59,17 +59,27 @@ an agent.**
   orchestrator holds `TOOL_CALLBACK_SECRET`, on the two components that need it
   (dispatcher to sign, chat-api to verify).
 
-- **Reply routing is transport, not prompt.** The `reply` descriptor travels as
-  a transport field on `/api/chat`, is stored on the worker's `reply-to` topic
-  keyed by `session_id`, and is re-attached to the worker's output at end-turn by
-  a left-join. The worker's LLM never sees it, and the worker has no "call back to
+- **Reply routing is transport, not prompt.** The `reply` descriptor
+  (`{ "callbackService": "...", "bearerToken": "..." }`) travels as a transport
+  field on `/api/chat`, is stored on the worker's `reply-to` topic keyed by
+  `session_id`, and is re-attached to the worker's output at end-turn by a
+  left-join. The worker's LLM never sees it, and the worker has no "call back to
   the orchestrator" tool. Routing lives in the delivery layer, keeping the worker
   a vanilla agent.
 
+- **SSRF-safe callbacks: the caller names a service, never a URL.** The descriptor
+  carries only a logical `callbackService` name. The worker resolves it to a base
+  URL from its own operator-controlled `ALLOWED_HOST_MAPPING`
+  (`orchestrator:http://orchestrator-api:8000`) and POSTs to the fixed path
+  `<baseUrl>/api/tools/response`. Because the destination host comes from worker
+  config and never from caller input, an untrusted caller cannot steer the
+  server-side callback at an internal host — the request is rejected (400 at
+  `/api/chat`, and fail-closed at delivery) if the name is not in the mapping.
+
 - **Free-form answer, A shapes it.** The worker returns ordinary prose. The
-  worker's OutputConsumer wraps it under the caller-named field
-  (`responseAsField: "result"` → `{ "result": "<answer>" }`) and the orchestrator
-  turns it into a canonical tool result. No JSON contract is forced on the worker.
+  worker's OutputConsumer wraps it under the fixed field name
+  (`{ "result": "<answer>" }`) and the orchestrator turns it into a canonical tool
+  result. No JSON contract is forced on the worker.
 
 - **Failure is a timeout, not an error channel.** The worker never reports
   failure. If it crashes or never answers, the orchestrator's aggregator hits its

@@ -113,8 +113,8 @@ services:
       AGENT_NAME: orchestrator
       TOOL_CALLBACK_SECRET: ${TOOL_CALLBACK_SECRET}
       TARGET_CHAT_URL: http://worker-api:8000/api/chat
-      CALLBACK_ENDPOINT: http://orchestrator-api:8000
-      CALLBACK_PATH: /api/tools/response
+      # Logical callback-service name; the worker resolves it to the URL below.
+      CALLBACK_SERVICE: orchestrator
     depends_on:
       kafka:
         condition: service_healthy
@@ -140,6 +140,10 @@ services:
       AGENT_NAME: worker
       PORT: 8000
       WS_PORT: 8001
+      # SSRF-safe callback routing: a `reply` descriptor may only name one of
+      # these services; the worker resolves the name to the base URL here and
+      # POSTs to <baseUrl>/api/tools/response. Callers never supply a URL.
+      ALLOWED_HOST_MAPPING: "orchestrator:http://orchestrator-api:8000"
     depends_on:
       kafka:
         condition: service_healthy

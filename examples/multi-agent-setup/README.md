@@ -121,6 +121,21 @@ Open [http://localhost](http://localhost) and try:
 Watch `docker compose logs -f orchestrator-dispatcher worker-api` to see the
 dispatch → pending ack → worker answer → callback → tool result round-trip.
 
+## Integration test
+
+`integration-test.sh` brings the whole stack up, posts a message to
+`orchestrator-api`, and verifies the round-trip — that the worker handled a
+delegated sub-session and the orchestrator emitted a non-empty final answer —
+then tears everything down. It takes `CLAUDE_API_KEY` from the environment:
+
+```bash
+CLAUDE_API_KEY=sk-ant-... ./integration-test.sh
+```
+
+The default prompt asks the worker to derive ∫₀^∞ x²/(eˣ−1) dx (= 2ζ(3) ≈
+2.404114), so the printed answer is easy to eyeball. Override `TIMEOUT` or
+`CLAUDE_MODEL` via env if needed.
+
 ## Troubleshooting
 
 - **`/api/tools/response` returns 401** — `TOOL_CALLBACK_SECRET` differs between

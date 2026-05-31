@@ -13,7 +13,8 @@ on:
     branches: [main]
     paths:
       - examples/multi-agent-setup/**
-      - api/chat-api/**
+      - api/**
+      - frontend/**
       - processor-apps/processing/**
       - think/think-consumer/**
       - .github/workflows/multi-agent-integration.yml

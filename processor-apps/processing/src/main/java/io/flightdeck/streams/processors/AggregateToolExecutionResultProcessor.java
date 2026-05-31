@@ -239,9 +239,16 @@ public class AggregateToolExecutionResultProcessor {
             if (current == null) {
                 // First result of a turn arriving before its seed: start a
                 // count-based accumulator (the seed merges in the expected set later).
+                // user_id is unknown here — ToolUseResult carries none. Leave it
+                // null; the seed (think-request-response) fills it in when it
+                // merges, and downstream tolerates a null user_id. Using
+                // result.sessionId() here would stamp the session id into user_id
+                // and, if the count-based path completes before the seed arrives,
+                // emit a tool message with the wrong user_id.
                 current = new ToolResultAccumulator(
-                        sessionId, result.sessionId(), result.totalTools(),
-                        List.of(), List.of(), now + ASYNC_TOOL_TIMEOUT_MS, false, null);
+                        sessionId, null, result.totalTools(),
+                        List.of(), List.of(), now + ASYNC_TOOL_TIMEOUT_MS, false,
+                        Instant.now().toString());
             }
 
             boolean duplicate = current.results() != null && current.results().stream()

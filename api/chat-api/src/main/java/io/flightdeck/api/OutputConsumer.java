@@ -161,6 +161,9 @@ public class OutputConsumer implements Runnable {
                     return;
                 }
                 log.warn("[{}] Reply delivery got retriable HTTP {} (attempt {})", sessionId, code, attempt);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
             } catch (Exception e) {
                 // Connection/timeout errors are retriable.
                 log.warn("[{}] Reply delivery error (attempt {}): {}", sessionId, attempt, e.getMessage());

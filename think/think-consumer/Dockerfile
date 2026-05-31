@@ -3,7 +3,9 @@ WORKDIR /app
 COPY pom.xml .
 RUN mvn dependency:go-offline -q
 COPY src ./src
-RUN mvn package -q -DskipTests
+# Skip test compilation+execution for the image build (tests run in CI via
+# `mvn test`); keeps the image build decoupled from test sources.
+RUN mvn package -q -Dmaven.test.skip=true
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app

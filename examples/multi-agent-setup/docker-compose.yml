@@ -4,9 +4,12 @@
 #   • orchestrator (user-facing) — delegates tasks to the worker via an async tool
 #   • worker       (headless)    — an ordinary agent that answers delegated tasks
 #
-# chat-api and processing are BUILT FROM SOURCE in this repo because this example
-# demonstrates functionality on the feat/multi-agent branch that is not in the
-# published images yet. think-consumer and frontend use published images.
+# chat-api, processing AND think-consumer are BUILT FROM SOURCE in this repo
+# because this example demonstrates functionality on the feat/multi-agent branch
+# that is not in the published images yet. All three core services MUST share the
+# same build — mixing a source-built processing with a published think-consumer
+# causes a ThinkResponse schema mismatch (empty content / lost history). Only the
+# frontend (a stable UI over chat-api's WebSocket) uses a published image.
 
 services:
 
@@ -81,7 +84,9 @@ services:
         condition: service_healthy
 
   orchestrator-think:
-    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    build:
+      context: ../../think/think-consumer
+    image: flightdeck-multiagent/think-consumer:local
     volumes:
       - ./orchestrator/tools.json:/app/tools.json:ro
       - ./orchestrator/system-prompt.txt:/app/system-prompt.txt:ro
@@ -154,7 +159,7 @@ services:
         condition: service_started
 
   worker-think:
-    image: ghcr.io/tsuz/flightdeck/think-consumer:${FLIGHTDECK_VERSION:-latest}
+    image: flightdeck-multiagent/think-consumer:local
     volumes:
       - ./worker/tools.json:/app/tools.json:ro
       - ./worker/system-prompt.txt:/app/system-prompt.txt:ro

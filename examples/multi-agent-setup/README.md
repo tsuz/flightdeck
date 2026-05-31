@@ -106,9 +106,11 @@ cp .env.example .env
 docker compose up --build
 ```
 
-`chat-api` and `processing` build from source in this repo (this example
-demonstrates branch functionality not yet in the published images). The first
-build takes a few minutes.
+`chat-api`, `processing`, and `think-consumer` build from source in this repo
+(this example demonstrates branch functionality not yet in the published images).
+All three must share the same build — a source-built `processing` paired with a
+published `think-consumer` mismatches the `ThinkResponse` schema and produces
+empty content / lost history. The first build takes a few minutes.
 
 Open [http://localhost](http://localhost) and try:
 

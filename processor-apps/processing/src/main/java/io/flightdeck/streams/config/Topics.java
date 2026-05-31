@@ -75,6 +75,14 @@ public final class Topics {
      * consumed by the chat-api OutputConsumer to deliver the response back to the
      * caller. Compacted with a time-based retention ({@code REPLY_TO_STATE_TTL_MS})
      * so stale routes are eventually dropped.
+     *
+     * <p>TODO(multi-agent): the key is {@code session_id}, so a session can hold
+     * only ONE outstanding reply route at a time — a second {@code reply}
+     * descriptor for the same session overwrites the first. To support multiple
+     * concurrent callbacks within one session (e.g. parallel sub-agent calls that
+     * reuse the session), key by {@code sessionId:requestId} instead and carry the
+     * requestId through the join. Deferred — one route per session is sufficient
+     * for the current one-shot delegation flow.
      */
     public static final String REPLY_TO                 = PREFIX + "reply-to";
 }

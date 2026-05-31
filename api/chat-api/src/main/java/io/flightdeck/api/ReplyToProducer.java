@@ -52,7 +52,14 @@ public class ReplyToProducer {
         log.info("Reply-to producer initialized — bootstrap={} topic={}", BOOTSTRAP_SERVERS, TOPIC);
     }
 
-    /** Writes (or overwrites) the reply-routing descriptor for a session. */
+    /**
+     * Writes (or overwrites) the reply-routing descriptor for a session.
+     *
+     * <p>TODO(multi-agent): keyed by sessionId, so only one outstanding reply
+     * route per session is supported (a second write overwrites the first). For
+     * multiple concurrent callbacks within one session, key by
+     * {@code sessionId:requestId}. Deferred — see Topics.REPLY_TO.
+     */
     public void send(String sessionId, String descriptorJson) {
         ProducerRecord<String, String> record = new ProducerRecord<>(TOPIC, sessionId, descriptorJson);
         producer.send(record, (metadata, exception) -> {

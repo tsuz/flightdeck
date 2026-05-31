@@ -28,10 +28,10 @@ public class ChatApiApp {
         ReplyToProducer replyToProducer = new ReplyToProducer();
 
         // Shared secret for verifying async tool callback tokens. Optional —
-        // if unset, /api/tool/response rejects every callback.
+        // if unset, /api/tools/response rejects every callback.
         String callbackSecret = env("TOOL_CALLBACK_SECRET", "");
         if (callbackSecret.isBlank()) {
-            log.warn("TOOL_CALLBACK_SECRET is not set — /api/tool/response will reject all callbacks");
+            log.warn("TOOL_CALLBACK_SECRET is not set — /api/tools/response will reject all callbacks");
         }
 
         // 2. HTTP server for REST API

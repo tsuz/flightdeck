@@ -1,5 +1,6 @@
 package io.flightdeck.streams.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -20,14 +21,22 @@ import java.util.List;
 public record ThinkResponse(
         @JsonProperty("session_id")              String sessionId,
         @JsonProperty("user_id")                 String userId,
-        @JsonProperty("total_session_cost")      Double totalSessionCost,
-        @JsonProperty("previous_session_cost")   Double previousSessionCost,
+        // @JsonAlias accepts the older think-consumer wire schema too: published
+        // think-consumer images (pre the previous/last-input split) emit
+        // "cost"/"prev_session_cost"/"input_tokens"/"output_tokens" and a single
+        // combined "messages" list. Aliasing lets this model read both schemas, so
+        // a source-built processing stays compatible with published think-consumer
+        // images. assembleContent()/history filter by role, so a combined
+        // "messages" list (user + assistant) deserialized into lastInputResponse
+        // still yields the correct content.
+        @JsonProperty("total_session_cost") @JsonAlias("cost")               Double totalSessionCost,
+        @JsonProperty("previous_session_cost") @JsonAlias("prev_session_cost") Double previousSessionCost,
         @JsonProperty("think_cost")              Double thinkCost,
-        @JsonProperty("think_input_tokens")      int thinkInputTokens,
-        @JsonProperty("think_output_tokens")     int thinkOutputTokens,
+        @JsonProperty("think_input_tokens") @JsonAlias("input_tokens")       int thinkInputTokens,
+        @JsonProperty("think_output_tokens") @JsonAlias("output_tokens")     int thinkOutputTokens,
         @JsonProperty("previous_messages")       List<MessageInput> previousMessages,
         @JsonProperty("last_input_message")      MessageInput lastInputMessage,
-        @JsonProperty("last_input_response")     List<MessageInput> lastInputResponse,
+        @JsonProperty("last_input_response") @JsonAlias("messages")          List<MessageInput> lastInputResponse,
         @JsonProperty("tool_uses")               List<ToolUseItem> toolUses,
         @JsonProperty("end_turn")                boolean endTurn,
         @JsonProperty("compaction")              boolean compaction,

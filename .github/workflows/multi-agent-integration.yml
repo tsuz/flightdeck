@@ -1,0 +1,53 @@
+name: Multi-Agent Integration
+
+# End-to-end test of the examples/multi-agent-setup stack: build the images,
+# send a message to orchestrator-api, and verify the orchestrator → worker →
+# callback round-trip.
+#
+# Runs post-merge on main (and on manual dispatch) — not as a PR gate. It hits
+# the real Claude API, so it needs the CLAUDE_API_KEY repo secret; if the secret
+# is unset the job soft-skips rather than failing main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - examples/multi-agent-setup/**
+      - api/**
+      - frontend/**
+      - processor-apps/processing/**
+      - think/think-consumer/**
+      - .github/workflows/multi-agent-integration.yml
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Orchestrator → Worker round-trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for CLAUDE_API_KEY secret
+        id: guard
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        run: |
+          if [ -z "$CLAUDE_API_KEY" ]; then
+            echo "::warning::CLAUDE_API_KEY secret not set — skipping integration test"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run integration test
+        if: steps.guard.outputs.skip != 'true'
+        working-directory: examples/multi-agent-setup
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          TIMEOUT: "300"
+        run: ./integration-test.sh
+
+      - name: Tear down (backstop)
+        if: always()
+        working-directory: examples/multi-agent-setup
+        run: docker compose -p multiagent-it down -v || true

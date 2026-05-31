@@ -24,6 +24,21 @@ import java.time.Instant;
  *   { "session_id": "...", "user_id": "user_42", "role": "user",
  *     "content": "hello", "timestamp": "...",
  *     "metadata": { "locale": "en-US", "client": "web" } }
+ *
+ * <p>For multi-agent calls the request may also carry a transport-level
+ * {@code reply} descriptor naming where this session's terminal response should
+ * be delivered, e.g.:
+ * <pre>
+ *   { "session_id": "...", "content": "...",
+ *     "reply": { "callbackService": "my-agent-a", "bearerToken": "&lt;HMAC&gt;" } }
+ * </pre>
+ * {@code callbackService} is a logical name resolved server-side against
+ * {@code ALLOWED_HOST_MAPPING} ({@link CallbackRegistry}); the caller never
+ * supplies a URL, so the descriptor cannot steer the callback at an arbitrary
+ * host. Unknown names are rejected here with a 400.
+ * The {@code reply} object is NOT placed into the message content/metadata — it
+ * is written to the reply-to topic (keyed by session_id) so it never reaches the
+ * LLM. The agent processes the request as an ordinary chat.
  */
 public class ChatHandler implements HttpHandler {
 
@@ -31,9 +46,11 @@ public class ChatHandler implements HttpHandler {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private final KafkaMessageProducer producer;
+    private final ReplyToProducer replyToProducer;
 
-    public ChatHandler(KafkaMessageProducer producer) {
+    public ChatHandler(KafkaMessageProducer producer, ReplyToProducer replyToProducer) {
         this.producer = producer;
+        this.replyToProducer = replyToProducer;
     }
 
     @Override
@@ -58,6 +75,28 @@ public class ChatHandler implements HttpHandler {
 
             String sessionId = requireField(body, "session_id");
             String content = requireField(body, "content");
+
+            // Transport-level reply routing (multi-agent). Written to the reply-to
+            // topic keyed by session_id; never placed into the message content.
+            if (body.hasNonNull("reply")) {
+                JsonNode reply = body.get("reply");
+                if (!reply.isObject()) {
+                    throw new IllegalArgumentException("'reply' must be an object");
+                }
+                String callbackService = reply.path("callbackService").asText("");
+                if (callbackService.isBlank()) {
+                    throw new IllegalArgumentException("'reply' must include 'callbackService'");
+                }
+                // Fail closed: reject a descriptor naming a service this agent is not
+                // configured to call back, so unroutable routes never reach the
+                // reply-to topic and the caller gets an immediate 400.
+                if (!CallbackRegistry.isKnown(callbackService)) {
+                    throw new IllegalArgumentException("unknown callbackService: " + callbackService);
+                }
+                replyToProducer.send(sessionId, mapper.writeValueAsString(reply));
+                log.info("[{}] Stored reply-to descriptor (callbackService={})",
+                        sessionId, callbackService);
+            }
 
             // Build the full message-input payload
             ObjectNode message = mapper.createObjectNode();

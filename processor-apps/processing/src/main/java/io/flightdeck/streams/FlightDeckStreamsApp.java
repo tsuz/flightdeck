@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +46,11 @@ public class FlightDeckStreamsApp {
 
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
+    static final String REPLY_TO_STORE = "reply-to-store";
+
+    /** Time-based expiry for reply-to routing state (default 24h). */
+    static final long REPLY_TO_STATE_TTL_MS = Long.parseLong(
+            System.getenv().getOrDefault("REPLY_TO_STATE_TTL_MS", "86400000"));
 
 
     public static void main(String[] args) {
@@ -118,11 +124,23 @@ public class FlightDeckStreamsApp {
                         .withValueSerde(JsonSerde.of(ThinkResponse.class))
         );
 
+        // ── Shared KTable: reply-to routing descriptors (multi-agent) ───────
+        //    session_id → reply descriptor JSON. Left-joined into message-output
+        //    at end-turn so the OutputConsumer knows where to deliver a reply.
+        KTable<String, String> replyToTable = builder.table(
+                Topics.REPLY_TO,
+                Consumed.with(Serdes.String(), Serdes.String()),
+                Materialized.<String, String>as(
+                                Stores.persistentKeyValueStore(REPLY_TO_STORE))
+                        .withKeySerde(Serdes.String())
+                        .withValueSerde(Serdes.String())
+        );
+
         // ── Register each processor fragment ──────────────────────────────────
         EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
-        EndTurnProcessor.register(builder, thinkStream);
-        AggregateToolExecutionResultProcessor.register(builder);
+        EndTurnProcessor.register(builder, thinkStream, replyToTable);
+        AggregateToolExecutionResultProcessor.register(builder, thinkStream);
         TransformToolUseDoneProcessor.register(builder);
 
         if (memoirEnabled) {
@@ -158,7 +176,8 @@ public class FlightDeckStreamsApp {
                 Topics.TOOL_USE_RESULT,
                 Topics.TOOL_USE_ALL_COMPLETE,
                 Topics.TOOL_USE_LATENCY,
-                Topics.MESSAGE_OUTPUT
+                Topics.MESSAGE_OUTPUT,
+                Topics.REPLY_TO
         ));
 
         if (MEMOIR_ENABLED) {
@@ -174,7 +193,18 @@ public class FlightDeckStreamsApp {
 
             List<NewTopic> toCreate = requiredTopics.stream()
                     .filter(t -> !existing.contains(t))
-                    .map(t -> new NewTopic(t, 1, (short) 1))
+                    .map(t -> {
+                        NewTopic topic = new NewTopic(t, 1, (short) 1);
+                        // reply-to is a keyed-state topic: keep the latest descriptor
+                        // per session_id, but also drop anything older than the TTL.
+                        if (t.equals(Topics.REPLY_TO)) {
+                            topic.configs(Map.of(
+                                    "cleanup.policy", "compact,delete",
+                                    "retention.ms", String.valueOf(REPLY_TO_STATE_TTL_MS)
+                            ));
+                        }
+                        return topic;
+                    })
                     .collect(Collectors.toList());
 
             if (!toCreate.isEmpty()) {

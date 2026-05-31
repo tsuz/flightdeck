@@ -164,7 +164,7 @@ class TransformToolUseDoneProcessorTest {
     @DisplayName("Accumulator with empty results list is filtered and produces no output")
     void emptyResults_filtered() {
         allCompleteInput.pipeInput("sess-empty",
-                new ToolResultAccumulator("sess-empty", "u", 0, List.of(), true, TS));
+                new ToolResultAccumulator("sess-empty", "u", 0, List.of(), List.of(), 0L, true, TS));
 
         assertThat(messageOutput.isEmpty()).isTrue();
     }
@@ -272,11 +272,11 @@ class TransformToolUseDoneProcessorTest {
     private static ToolResultAccumulator accumulator(String sessionId, String userId,
                                                       List<ToolUseResult> results) {
         return new ToolResultAccumulator(sessionId, userId, results.size(),
-                results, true, TS);
+                results, List.of(), 0L, true, TS);
     }
 
     private static ToolUseResult result(String sessionId, String toolUseId,
                                          String name, Map<String, Object> resultData) {
-        return new ToolUseResult(sessionId, toolUseId, name, resultData, 320L, "success", 1, TS);
+        return new ToolUseResult(sessionId, toolUseId, null, name, resultData, 320L, "success", 1, TS);
     }
 }

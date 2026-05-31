@@ -10,9 +10,11 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
 import org.apache.kafka.streams.test.TestRecord;
 import org.junit.jupiter.api.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -32,7 +34,10 @@ class EndTurnProcessorTest {
         KStream<String, ThinkResponse> thinkStream = builder.stream(
                 Topics.THINK_REQUEST_RESPONSE,
                 Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
-        EndTurnProcessor.register(builder, thinkStream);
+        KTable<String, String> replyToTable = builder.table(
+                Topics.REPLY_TO,
+                Consumed.with(Serdes.String(), Serdes.String()));
+        EndTurnProcessor.register(builder, thinkStream, replyToTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-end-turn");
@@ -237,6 +242,35 @@ class EndTurnProcessorTest {
 
         UserResponse result = toUserResponse("s", resp);
         assertThat(result.content()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("toUserResponse: reads the think-consumer 'messages' wire schema (regression — empty content)")
+    void toUserResponse_messagesSchema_extractsContent() {
+        // Exact shape the think-consumer emits onto {agent}-think-request-response:
+        // top-level "messages" / "input_tokens" / "output_tokens" (older schema, still
+        // produced by published images), NOT last_input_response / think_*_tokens.
+        // Regression: this turned into empty content + zero tokens on message-output.
+        String wire = "{"
+                + "\"session_id\":\"sess--tu\",\"user_id\":\"user_42\","
+                + "\"cost\":null,\"prev_session_cost\":null,"
+                + "\"input_tokens\":241,\"output_tokens\":402,"
+                + "\"messages\":["
+                + "  {\"session_id\":\"sess--tu\",\"user_id\":\"user_42\",\"role\":\"user\","
+                + "   \"content\":\"Create a morning list\",\"timestamp\":\"" + TS + "\",\"metadata\":{}},"
+                + "  {\"session_id\":\"sess--tu\",\"user_id\":\"user_42\",\"role\":\"assistant\","
+                + "   \"content\":\"# Morning Routine Checklist\\n- Hydrate\",\"timestamp\":\"" + TS + "\",\"metadata\":null}"
+                + "],"
+                + "\"tool_uses\":null,\"end_turn\":true,\"timestamp\":\"" + TS + "\"}";
+
+        ThinkResponse resp = JsonSerde.of(ThinkResponse.class).deserializer()
+                .deserialize("t", wire.getBytes(StandardCharsets.UTF_8));
+
+        UserResponse result = toUserResponse("sess--tu", resp);
+
+        assertThat(result.content()).contains("Morning Routine Checklist");
+        assertThat(result.outputTokens()).isEqualTo(402);
+        assertThat(result.inputTokens()).isEqualTo(241);
     }
 
     // ── total_session_cost ────────────────────────────────────────────────────

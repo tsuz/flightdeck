@@ -1,6 +1,6 @@
 package io.flightdeck.api;
 
-import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
  * <p>Fed by {@link ToolResponseHandler} when an external system calls back to
  * {@code POST /api/tools/response} with the result of an async tool.
  *
- * <p>Wraps the process-wide shared {@link KafkaProducer} (see
+ * <p>Wraps the process-wide shared {@link Producer} (see
  * {@link KafkaProducerFactory}); it does not own the producer and so does not
  * close it.
  */
@@ -23,9 +23,9 @@ public class ToolResultProducer {
     private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
     private static final String TOPIC = AGENT_NAME + "-tool-use-result";
 
-    private final KafkaProducer<String, String> producer;
+    private final Producer<String, String> producer;
 
-    public ToolResultProducer(KafkaProducer<String, String> producer) {
+    public ToolResultProducer(Producer<String, String> producer) {
         this.producer = producer;
         log.info("Tool result producer wired to shared producer — topic={}", TOPIC);
     }

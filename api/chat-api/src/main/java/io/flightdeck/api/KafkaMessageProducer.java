@@ -1,6 +1,6 @@
 package io.flightdeck.api;
 
-import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
  * The record key is the session_id so that all messages for a session
  * land on the same partition.
  *
- * <p>Wraps the process-wide shared {@link KafkaProducer} (see
+ * <p>Wraps the process-wide shared {@link Producer} (see
  * {@link KafkaProducerFactory}); it does not own the producer and so does not
  * close it.
  */
@@ -21,9 +21,9 @@ public class KafkaMessageProducer {
     private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
     private static final String TOPIC = AGENT_NAME + "-message-input";
 
-    private final KafkaProducer<String, String> producer;
+    private final Producer<String, String> producer;
 
-    public KafkaMessageProducer(KafkaProducer<String, String> producer) {
+    public KafkaMessageProducer(Producer<String, String> producer) {
         this.producer = producer;
         log.info("Kafka message producer wired to shared producer — topic={}", TOPIC);
     }

@@ -60,7 +60,7 @@ class CallbackRegistryTest {
 
     @Test
     void resolveFailsClosedForUnknownService() {
-        // Default config (no ALLOWED_HOST_MAPPING in the test env) → nothing is known.
+        // The test env only maps "test-callback"; any other name is unknown.
         assertFalse(CallbackRegistry.isKnown("anything"));
         assertFalse(CallbackRegistry.isKnown(null));
         assertThrows(IllegalArgumentException.class, () -> CallbackRegistry.resolve("anything"));

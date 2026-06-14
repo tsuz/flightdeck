@@ -1,6 +1,6 @@
 package io.flightdeck.api;
 
-import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * descriptor lives only until it is tombstoned or until {@code REPLY_TO_STATE_TTL_MS}
  * elapses, whichever comes first.
  *
- * <p>Wraps the process-wide shared {@link KafkaProducer} (see
+ * <p>Wraps the process-wide shared {@link Producer} (see
  * {@link KafkaProducerFactory}); it does not own the producer and so does not
  * close it.
  */
@@ -34,9 +34,9 @@ public class ReplyToProducer {
     private static final String AGENT_NAME = ChatApiApp.requireEnv("AGENT_NAME");
     private static final String TOPIC = AGENT_NAME + "-reply-to";
 
-    private final KafkaProducer<String, String> producer;
+    private final Producer<String, String> producer;
 
-    public ReplyToProducer(KafkaProducer<String, String> producer) {
+    public ReplyToProducer(Producer<String, String> producer) {
         this.producer = producer;
         log.info("Reply-to producer wired to shared producer — topic={}", TOPIC);
     }

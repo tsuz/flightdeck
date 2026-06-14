@@ -75,6 +75,17 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <!-- Producer/registry classes read these at class-init. Set
+                         a non-empty AGENT_NAME so the producer wrappers can load,
+                         and a single allowed callback mapping so the integration
+                         test can exercise the reply-to path. The mapping name is
+                         "test-callback"; unrelated names stay unknown. -->
+                    <environmentVariables>
+                        <AGENT_NAME>test-agent</AGENT_NAME>
+                        <ALLOWED_HOST_MAPPING>test-callback:https://callback.invalid</ALLOWED_HOST_MAPPING>
+                    </environmentVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

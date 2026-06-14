@@ -1,6 +1,7 @@
 package io.flightdeck.api;
 
 import com.sun.net.httpserver.HttpServer;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,11 +22,15 @@ public class ChatApiApp {
     private static final int WS_PORT = Integer.parseInt(env("WS_PORT", "8001"));
 
     public static void main(String[] args) throws Exception {
-        // 1. Kafka producers (chat → message-input, async callbacks → tool-use-result,
-        //    multi-agent reply routes → reply-to)
-        KafkaMessageProducer producer = new KafkaMessageProducer();
-        ToolResultProducer toolResultProducer = new ToolResultProducer();
-        ReplyToProducer replyToProducer = new ReplyToProducer();
+        // 1. One shared Kafka producer for all outbound topics. A KafkaProducer is
+        //    thread-safe and routes each record to the topic on the ProducerRecord,
+        //    so the wrappers (chat → message-input, async callbacks → tool-use-result,
+        //    multi-agent reply routes → reply-to) all share a single set of broker
+        //    connections instead of one set per topic.
+        KafkaProducer<String, String> sharedProducer = KafkaProducerFactory.create();
+        KafkaMessageProducer producer = new KafkaMessageProducer(sharedProducer);
+        ToolResultProducer toolResultProducer = new ToolResultProducer(sharedProducer);
+        ReplyToProducer replyToProducer = new ReplyToProducer(sharedProducer);
 
         // Shared secret for verifying async tool callback tokens. Optional —
         // if unset, /api/tools/response rejects every callback.
@@ -67,9 +72,8 @@ public class ChatApiApp {
             pipelineConsumer.stop();
             try { wsServer.stop(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             httpServer.stop(2);
-            producer.close();
-            toolResultProducer.close();
-            replyToProducer.close();
+            sharedProducer.close();
+            log.info("Shared Kafka producer closed");
         }));
 
         log.info("Chat API ready — HTTP={} WS={}", PORT, WS_PORT);

@@ -1,0 +1,48 @@
+[
+  {
+    "name": "submit_ticket",
+    "description": "Submit a Facilities maintenance ticket (e.g. broken AC, flickering lights, broken desk). Returns a ticket number and ETA.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "location": { "type": "string", "description": "Building / floor / room (e.g. 'SF HQ, Floor 3, Room 4B')" },
+        "category": {
+          "type": "string",
+          "enum": ["hvac", "lighting", "furniture", "plumbing", "other"],
+          "description": "Category of the issue"
+        },
+        "description": { "type": "string", "description": "Description of the problem" }
+      },
+      "required": ["location", "category", "description"]
+    }
+  },
+  {
+    "name": "book_room",
+    "description": "Book a conference room. Returns confirmation or alternatives if unavailable.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "room": { "type": "string", "description": "Room name (e.g. 'Yosemite', 'Tahoe-2')" },
+        "date": { "type": "string", "description": "Date in YYYY-MM-DD format" },
+        "start_time": { "type": "string", "description": "Start time in 24h format, e.g. '14:00'" },
+        "duration_minutes": { "type": "integer", "description": "Duration in minutes" }
+      },
+      "required": ["room", "date", "start_time", "duration_minutes"]
+    }
+  },
+  {
+    "name": "check_office_status",
+    "description": "Check whether an office location is open today and any current building advisories (closures, maintenance, weather).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "office": {
+          "type": "string",
+          "enum": ["sf", "nyc", "london", "tokyo"],
+          "description": "Office location code"
+        }
+      },
+      "required": ["office"]
+    }
+  }
+]

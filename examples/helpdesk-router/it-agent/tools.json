@@ -1,0 +1,46 @@
+[
+  {
+    "name": "lookup_device",
+    "description": "Look up an employee's company-issued device(s). Returns model, OS version, last check-in, encryption status, and any pending updates.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username (e.g. jsmith)" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "check_vpn_status",
+    "description": "Check whether an employee's VPN account is active, what region they're connected from, and recent connection history.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "check_account_status",
+    "description": "Check whether an employee's primary account is active, locked, or pending password reset. Returns lockout reason and last successful login.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "reset_password",
+    "description": "Trigger a password reset email for an employee. Returns confirmation and the email the link was sent to.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  }
+]

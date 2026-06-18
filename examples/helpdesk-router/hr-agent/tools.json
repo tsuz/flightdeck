@@ -1,0 +1,39 @@
+[
+  {
+    "name": "get_pto_balance",
+    "description": "Look up an employee's current PTO (paid time off) balance, including vacation, sick days, and pending requests.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "lookup_policy",
+    "description": "Look up an HR policy by topic. Returns the policy text and document reference.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "enum": ["pto", "parental_leave", "remote_work", "expense_reimbursement", "code_of_conduct"],
+          "description": "Which policy to look up"
+        }
+      },
+      "required": ["topic"]
+    }
+  },
+  {
+    "name": "get_benefits_summary",
+    "description": "Get a summary of an employee's benefits enrollment — health, dental, vision, 401k.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  }
+]

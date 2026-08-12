@@ -56,6 +56,15 @@ public final class Topics {
     /** Emitted when a session has been inactive for a configured period */
     public static final String SESSION_END              = PREFIX + "session-end";
 
+    // ── User settings ─────────────────────────────────────────────────────────
+    /**
+     * Per-user settings (system prompt override, etc.), keyed by user_id.
+     * Compacted so the latest settings record per user is retained. Only wired
+     * into the topology when {@code ENABLE_USER_SETTING=true}; a tombstone
+     * (null value) reverts the user to the default settings.
+     */
+    public static final String USER_SETTINGS             = PREFIX + "user-settings";
+
     // ── Memoir ───────────────────────────────────────────────────────────────
     /** Long-term memoir / summary context per session (KTable) */
     public static final String MEMOIR_CONTEXT           = PREFIX + "memoir-context";

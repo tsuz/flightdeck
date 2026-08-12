@@ -286,8 +286,9 @@ public class ThinkConsumer implements AutoCloseable {
             }
         }
 
-        // 4. Build system prompt with memoir context
-        String systemPrompt = buildSystemPrompt(context.memoirContext());
+        // 4. Build system prompt: per-user override (if any) + memoir context
+        String systemPrompt = buildSystemPrompt(
+                resolveBasePrompt(context.systemPrompt()), context.memoirContext());
 
         // 5. Convert history + latest input to LLM provider message format
         List<Map<String, Object>> llmMessages = llmApiService.toApiMessages(
@@ -347,6 +348,17 @@ public class ThinkConsumer implements AutoCloseable {
             }
         });
         producer.flush();
+    }
+
+    /**
+     * Resolves the base system prompt for a turn: the per-user override from
+     * the user-settings topic (carried in {@code FullSessionContext.system_prompt})
+     * replaces the default entirely; null/blank falls back to SYSTEM_PROMPT_BASE.
+     */
+    static String resolveBasePrompt(String systemPromptOverride) {
+        return (systemPromptOverride != null && !systemPromptOverride.isBlank())
+                ? systemPromptOverride
+                : SYSTEM_PROMPT_BASE;
     }
 
     /**

@@ -53,9 +53,9 @@ public class EnrichInputMessageProcessor {
                                 KTable<String, ThinkResponse> thinkTable,
                                 KTable<String, UserSettings> userSettingsTable) {
 
-        // ── Left side: incoming user messages ────────────────────────────────
+        // ── Left side: incoming user messages, post-admission-control ────────
         KStream<String, MessageInput> inputStream = builder.stream(
-                Topics.MESSAGE_INPUT,
+                Topics.ADMITTED_MESSAGE_INPUT,
                 Consumed.with(Serdes.String(), JsonSerde.of(MessageInput.class))
         );
 

@@ -70,8 +70,11 @@ class EnrichInputMessageProcessorTest {
 
         driver = new TopologyTestDriver(builder.build(), props);
 
+        // Enrichment consumes the post-admission-control stream, so the test
+        // feeds admitted-message-input directly (bypassing the guard, which is
+        // exercised separately in SessionConcurrencyGuardProcessorTest).
         messageInput = driver.createInputTopic(
-                Topics.MESSAGE_INPUT,
+                Topics.ADMITTED_MESSAGE_INPUT,
                 Serdes.String().serializer(),
                 JsonSerde.of(MessageInput.class).serializer());
 

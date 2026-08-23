@@ -158,6 +158,7 @@ public class EndTurnProcessor {
                 response.totalSessionCost(),
                 sourceAgent,
                 parseReply(replyJson),
+                null,  // status — normal end-turn output (not a busy rejection)
                 Instant.now().toString()
         );
     }

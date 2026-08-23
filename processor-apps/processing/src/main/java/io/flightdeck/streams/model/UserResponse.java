@@ -32,5 +32,6 @@ public record UserResponse(
         @JsonProperty("cost")         Double cost,
         @JsonProperty("source_agent") String sourceAgent,  // which agent produced this
         @JsonProperty("reply_to")     Map<String, Object> replyTo,  // multi-agent reply route (nullable)
+        @JsonProperty("status")       String status,       // null for normal LLM output; "rejected" when the agent was busy
         @JsonProperty("timestamp")    String timestamp
 ) {}

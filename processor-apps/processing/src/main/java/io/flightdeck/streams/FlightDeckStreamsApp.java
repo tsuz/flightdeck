@@ -9,6 +9,7 @@ import io.flightdeck.streams.processors.MemoirSessionEndProcessor;
 import io.flightdeck.streams.processors.SessionEndProcessor;
 import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
 import io.flightdeck.streams.model.ThinkResponse;
+import io.flightdeck.streams.model.UserSettings;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -44,9 +45,14 @@ public class FlightDeckStreamsApp {
     static final boolean MEMOIR_ENABLED = Boolean.parseBoolean(
             System.getenv().getOrDefault("MEMOIR_ENABLED", "true"));
 
+    /** When true, the user-settings topic is joined into the enriched context. */
+    static final boolean USER_SETTING_ENABLED = Boolean.parseBoolean(
+            System.getenv().getOrDefault("ENABLE_USER_SETTING", "false"));
+
     static final String MEMOIR_CONTEXT_STORE = "memoir-context-store";
     static final String THINK_RESPONSE_STORE = "think-response-store";
     static final String REPLY_TO_STORE = "reply-to-store";
+    static final String USER_SETTINGS_STORE = "user-settings-store";
 
     /** Time-based expiry for reply-to routing state (default 24h). */
     static final long REPLY_TO_STATE_TTL_MS = Long.parseLong(
@@ -90,10 +96,14 @@ public class FlightDeckStreamsApp {
 
     /** Build and return the full topology (also used by tests). */
     public static Topology buildTopology() {
-        return buildTopology(MEMOIR_ENABLED);
+        return buildTopology(MEMOIR_ENABLED, USER_SETTING_ENABLED);
     }
 
     static Topology buildTopology(boolean memoirEnabled) {
+        return buildTopology(memoirEnabled, false);
+    }
+
+    static Topology buildTopology(boolean memoirEnabled, boolean userSettingEnabled) {
         StreamsBuilder builder = new StreamsBuilder();
 
         // ── Shared KTable: memoir-context (only when memoir is enabled) ───────
@@ -106,6 +116,19 @@ public class FlightDeckStreamsApp {
                                     Stores.persistentKeyValueStore(MEMOIR_CONTEXT_STORE))
                             .withKeySerde(Serdes.String())
                             .withValueSerde(Serdes.String())
+            );
+        }
+
+        // ── KTable: user-settings (only when ENABLE_USER_SETTING=true) ───────
+        KTable<String, UserSettings> userSettingsTable = null;
+        if (userSettingEnabled) {
+            userSettingsTable = builder.table(
+                    Topics.USER_SETTINGS,
+                    Consumed.with(Serdes.String(), JsonSerde.of(UserSettings.class)),
+                    Materialized.<String, UserSettings>as(
+                                    Stores.persistentKeyValueStore(USER_SETTINGS_STORE))
+                            .withKeySerde(Serdes.String())
+                            .withValueSerde(JsonSerde.of(UserSettings.class))
             );
         }
 
@@ -137,7 +160,7 @@ public class FlightDeckStreamsApp {
         );
 
         // ── Register each processor fragment ──────────────────────────────────
-        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable);
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, userSettingsTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream, replyToTable);
         AggregateToolExecutionResultProcessor.register(builder, thinkStream);
@@ -151,6 +174,8 @@ public class FlightDeckStreamsApp {
         } else {
             log.info("Memoir is DISABLED");
         }
+
+        log.info("User settings are {}", userSettingEnabled ? "ENABLED" : "DISABLED");
 
         return builder.build();
     }
@@ -188,6 +213,10 @@ public class FlightDeckStreamsApp {
             ));
         }
 
+        if (USER_SETTING_ENABLED) {
+            requiredTopics.add(Topics.USER_SETTINGS);
+        }
+
         try (AdminClient admin = AdminClient.create(adminProps)) {
             Set<String> existing = admin.listTopics().names().get(30, TimeUnit.SECONDS);
 
@@ -202,6 +231,11 @@ public class FlightDeckStreamsApp {
                                     "cleanup.policy", "compact,delete",
                                     "retention.ms", String.valueOf(REPLY_TO_STATE_TTL_MS)
                             ));
+                        }
+                        // user-settings is pure keyed state: keep the latest
+                        // settings record per user_id forever.
+                        if (t.equals(Topics.USER_SETTINGS)) {
+                            topic.configs(Map.of("cleanup.policy", "compact"));
                         }
                         return topic;
                     })

@@ -13,5 +13,13 @@ public record FullSessionContext(
         @JsonProperty("history")         List<MessageInput> history,
         @JsonProperty("latest_input")    MessageInput latestInput,
         @JsonProperty("memoir_context")  String memoirContext,
+        @JsonProperty("system_prompt")   String systemPrompt,
         @JsonProperty("timestamp")       String timestamp
-) {}
+) {
+    /** Convenience constructor for contexts without a per-user system prompt override. */
+    public FullSessionContext(String sessionId, String userId, Double cost,
+                              List<MessageInput> history, MessageInput latestInput,
+                              String memoirContext, String timestamp) {
+        this(sessionId, userId, cost, history, latestInput, memoirContext, null, timestamp);
+    }
+}

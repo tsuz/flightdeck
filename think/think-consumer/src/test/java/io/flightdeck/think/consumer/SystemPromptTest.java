@@ -37,6 +37,36 @@ class SystemPromptTest {
                 .hasMessageContaining("SYSTEM_PROMPT_FILE not found");
     }
 
+    // ── Per-user system prompt override (from user-settings topic) ──────────
+
+    @Test
+    @DisplayName("resolveBasePrompt: null or blank override falls back to the default prompt")
+    void resolveBasePrompt_nullOrBlank_usesDefault() {
+        assertThat(ThinkConsumer.resolveBasePrompt(null)).contains("intelligent AI assistant");
+        assertThat(ThinkConsumer.resolveBasePrompt("")).contains("intelligent AI assistant");
+        assertThat(ThinkConsumer.resolveBasePrompt("   ")).contains("intelligent AI assistant");
+    }
+
+    @Test
+    @DisplayName("resolveBasePrompt: per-user override replaces the default entirely")
+    void resolveBasePrompt_override_replacesDefault() {
+        String result = ThinkConsumer.resolveBasePrompt("You are Acme's billing assistant.");
+        assertThat(result).isEqualTo("You are Acme's billing assistant.");
+        assertThat(result).doesNotContain("intelligent AI assistant");
+    }
+
+    @Test
+    @DisplayName("Per-user override composes with memoir context")
+    void override_composesWithMemoir() {
+        String result = ThinkConsumer.buildSystemPrompt(
+                ThinkConsumer.resolveBasePrompt("Custom base prompt."),
+                "User prefers Japanese.");
+        assertThat(result)
+                .contains("Custom base prompt.")
+                .contains("User prefers Japanese.")
+                .doesNotContain("intelligent AI assistant");
+    }
+
     @Test
     @DisplayName("System prompt containing special characters is preserved literally (issue #23)")
     void specialChars_inPrompt_doesNotThrow() {

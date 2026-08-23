@@ -4,6 +4,7 @@ import io.flightdeck.streams.config.Topics;
 import io.flightdeck.streams.model.FullSessionContext;
 import io.flightdeck.streams.model.MessageInput;
 import io.flightdeck.streams.model.ThinkResponse;
+import io.flightdeck.streams.model.UserSettings;
 import io.flightdeck.streams.serdes.JsonSerde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.*;
@@ -44,6 +45,9 @@ class EnrichInputMessageProcessorTest {
     /** Seeds the memoir-context KTable */
     private TestInputTopic<String, String> memoirInput;
 
+    /** Seeds the user-settings KTable */
+    private TestInputTopic<String, UserSettings> userSettingsInput;
+
     @BeforeEach
     void setUp() {
         StreamsBuilder builder = new StreamsBuilder();
@@ -55,7 +59,10 @@ class EnrichInputMessageProcessorTest {
         KTable<String, ThinkResponse> thinkTable = builder.table(
                 Topics.THINK_REQUEST_RESPONSE,
                 Consumed.with(Serdes.String(), JsonSerde.of(ThinkResponse.class)));
-        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable);
+        KTable<String, UserSettings> userSettingsTable = builder.table(
+                Topics.USER_SETTINGS,
+                Consumed.with(Serdes.String(), JsonSerde.of(UserSettings.class)));
+        EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, userSettingsTable);
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG,    "test-enrich");
@@ -78,6 +85,11 @@ class EnrichInputMessageProcessorTest {
                 Topics.MEMOIR_CONTEXT,
                 Serdes.String().serializer(),
                 Serdes.String().serializer());
+
+        userSettingsInput = driver.createInputTopic(
+                Topics.USER_SETTINGS,
+                Serdes.String().serializer(),
+                JsonSerde.of(UserSettings.class).serializer());
 
         fullContextOutput = driver.createOutputTopic(
                 Topics.ENRICHED_MESSAGE_INPUT,
@@ -274,6 +286,88 @@ class EnrichInputMessageProcessorTest {
         ThinkResponse resp = new ThinkResponse("s", "ctx-user", 0.01, null, 0.01, 100, 50,
                 null, null, null, List.of(), true, false, 0, 0, 0.0, TS);
         assertThat(EnrichInputMessageProcessor.enrichWithThinkResponse(msg, resp).userId()).isEqualTo("ctx-user");
+    }
+
+    // ── User settings join ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Per-user system prompt from user-settings is joined into the context")
+    void userSettings_systemPromptJoined() {
+        userSettingsInput.pipeInput("user-S", new UserSettings("You are a pirate.", TS));
+
+        messageInput.pipeInput("sess-s1", userMsg("sess-s1", "user-S", "hi"));
+
+        FullSessionContext full = fullContextOutput.readRecord().value();
+        assertThat(full.systemPrompt()).isEqualTo("You are a pirate.");
+        assertThat(full.sessionId()).isEqualTo("sess-s1");
+    }
+
+    @Test
+    @DisplayName("system_prompt is null when the user has no settings record")
+    void userSettings_absent_systemPromptNull() {
+        messageInput.pipeInput("sess-s2", userMsg("sess-s2", "user-without-settings", "hi"));
+
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Tombstone on user-settings reverts the user to no override")
+    void userSettings_tombstone_revertsToNull() {
+        userSettingsInput.pipeInput("user-T", new UserSettings("Custom prompt.", TS));
+        messageInput.pipeInput("sess-t1", userMsg("sess-t1", "user-T", "first"));
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isEqualTo("Custom prompt.");
+
+        userSettingsInput.pipeInput("user-T", null);
+        messageInput.pipeInput("sess-t1", userMsg("sess-t1", "user-T", "second"));
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Settings are per-user: another user's prompt is not picked up")
+    void userSettings_isolatedPerUser() {
+        userSettingsInput.pipeInput("user-A", new UserSettings("Prompt for A.", TS));
+
+        messageInput.pipeInput("sess-b", userMsg("sess-b", "user-B", "hi"));
+
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Blank system_prompt is normalized to null (think-consumer treats blank as no override)")
+    void userSettings_blankPrompt_normalizedToNull() {
+        userSettingsInput.pipeInput("user-BL", new UserSettings("   ", TS));
+
+        messageInput.pipeInput("sess-bl", userMsg("sess-bl", "user-BL", "hi"));
+
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("A message with no user_id cannot pick up settings via a colliding session_id")
+    void userSettings_nullUserId_doesNotCollideWithSessionId() {
+        userSettingsInput.pipeInput("user-C", new UserSettings("Prompt for C.", TS));
+
+        // sessionId deliberately equals a real user_id: with no user_id on the
+        // message the join key falls back to sessionId, so the guard is what
+        // keeps user-C's prompt out of this turn.
+        messageInput.pipeInput("user-C", userMsg("user-C", null, "hi"));
+
+        FullSessionContext full = fullContextOutput.readRecord().value();
+        assertThat(full.userId()).isNull();
+        assertThat(full.systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("Memoir and system prompt can both be joined for the same user")
+    void userSettings_andMemoir_bothJoined() {
+        memoirInput.pipeInput("user-M", "Likes brevity.");
+        userSettingsInput.pipeInput("user-M", new UserSettings("Custom base.", TS));
+
+        messageInput.pipeInput("sess-m", userMsg("sess-m", "user-M", "hi"));
+
+        FullSessionContext full = fullContextOutput.readRecord().value();
+        assertThat(full.memoirContext()).isEqualTo("Likes brevity.");
+        assertThat(full.systemPrompt()).isEqualTo("Custom base.");
     }
 
     // ── Cost from ThinkResponse ─────────────────────────────────────────────

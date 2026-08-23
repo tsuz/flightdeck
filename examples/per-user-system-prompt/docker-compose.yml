@@ -1,0 +1,132 @@
+# Per-user system prompt — one system prompt per user id, delivered through the
+# compacted {AGENT_NAME}-user-settings topic.
+#
+#   user_alice → [SQL-TUTOR] persona   (seeded)
+#   user_bob   → [HAIKU] persona       (seeded)
+#   user_carol → no record             → default prompt: "I don't know."
+#
+# chat-api, processing AND think-consumer are BUILT FROM SOURCE because the
+# per-user system prompt (ENABLE_USER_SETTING) is not in the published images
+# yet. All three must share the same build — mixing a source-built processing
+# with a published think-consumer drops the system_prompt field on the way
+# through. Only the frontend uses a published image.
+
+services:
+
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:4.1.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─── Application Services ───────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ../../api/chat-api
+    image: flightdeck-usersettings/chat-api:local
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-per-user-prompt}
+      PORT: 8000
+      WS_PORT: 8001
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  processing:
+    build:
+      context: ../../processor-apps/processing
+    image: flightdeck-usersettings/processing:local
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-per-user-prompt}
+      # The feature under demo: materialize {AGENT_NAME}-user-settings as a
+      # KTable keyed by user_id and left-join it into the enriched context.
+      ENABLE_USER_SETTING: "true"
+      # Long-term memory is orthogonal to this example — keep it off so the
+      # only thing that varies between users is their system prompt.
+      MEMOIR_ENABLED: "false"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  think-consumer:
+    build:
+      context: ../../think/think-consumer
+    image: flightdeck-usersettings/think-consumer:local
+    volumes:
+      - ./system-prompt.txt:/app/system-prompt.txt:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-per-user-prompt}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-opus-5}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-2048}
+      # Prices are per 1M tokens, matching the model above.
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-5}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-25}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-0.5}
+      # The fallback used for any user with no user-settings record. A user's
+      # own system_prompt REPLACES this file entirely.
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ─── Seed: one system prompt per user ───────────────────────────────────────
+  # Waits for processing to create the compacted user-settings topic, then
+  # produces one keyed record per configured user and exits.
+  user-settings-seed:
+    image: apache/kafka:4.1.1
+    entrypoint: ["/bin/bash", "/seed/seed-user-settings.sh"]
+    volumes:
+      - ./seed-data:/seed:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-per-user-prompt}
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      processing:
+        condition: service_started
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+  # Note: the web UI does not send a user_id, so chat-api defaults it to
+  # user_42 — an unseeded user, which is the "I don't know." path. Give user_42
+  # a prompt (see the README) to drive a persona from the browser.
+
+  frontend:
+    image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
+    ports:
+      - "80:80"
+    depends_on:
+      - api

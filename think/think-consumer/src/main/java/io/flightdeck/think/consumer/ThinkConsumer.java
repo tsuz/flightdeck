@@ -352,7 +352,7 @@ public class ThinkConsumer implements AutoCloseable {
 
     /**
      * Resolves the base system prompt for a turn: the per-user override from
-     * the user-settings topic (carried in {@code FullSessionContext.system_prompt})
+     * the user-settings topic (carried in {@link FullSessionContext#systemPrompt()})
      * replaces the default entirely; null/blank falls back to SYSTEM_PROMPT_BASE.
      */
     static String resolveBasePrompt(String systemPromptOverride) {

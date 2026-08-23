@@ -333,6 +333,31 @@ class EnrichInputMessageProcessorTest {
     }
 
     @Test
+    @DisplayName("Blank system_prompt is normalized to null (think-consumer treats blank as no override)")
+    void userSettings_blankPrompt_normalizedToNull() {
+        userSettingsInput.pipeInput("user-BL", new UserSettings("   ", TS));
+
+        messageInput.pipeInput("sess-bl", userMsg("sess-bl", "user-BL", "hi"));
+
+        assertThat(fullContextOutput.readRecord().value().systemPrompt()).isNull();
+    }
+
+    @Test
+    @DisplayName("A message with no user_id cannot pick up settings via a colliding session_id")
+    void userSettings_nullUserId_doesNotCollideWithSessionId() {
+        userSettingsInput.pipeInput("user-C", new UserSettings("Prompt for C.", TS));
+
+        // sessionId deliberately equals a real user_id: with no user_id on the
+        // message the join key falls back to sessionId, so the guard is what
+        // keeps user-C's prompt out of this turn.
+        messageInput.pipeInput("user-C", userMsg("user-C", null, "hi"));
+
+        FullSessionContext full = fullContextOutput.readRecord().value();
+        assertThat(full.userId()).isNull();
+        assertThat(full.systemPrompt()).isNull();
+    }
+
+    @Test
     @DisplayName("Memoir and system prompt can both be joined for the same user")
     void userSettings_andMemoir_bothJoined() {
         memoirInput.pipeInput("user-M", "Likes brevity.");

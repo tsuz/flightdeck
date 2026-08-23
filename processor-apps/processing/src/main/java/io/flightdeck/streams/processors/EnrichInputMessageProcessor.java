@@ -181,6 +181,18 @@ public class EnrichInputMessageProcessor {
      * field null, which the think consumer treats as "use the default prompt".
      */
     static FullSessionContext enrichWithUserSettings(FullSessionContext enriched, UserSettings settings) {
+        // Two guards, both deliberate:
+        //  • userId must be non-null. When it is null the join key fell back to
+        //    sessionId, so a settings record whose user_id happens to equal that
+        //    sessionId would otherwise leak another user's prompt into this turn.
+        //  • blank is normalized to null, matching the think-consumer, which treats
+        //    a blank override as "no override" and falls back to the default prompt.
+        String systemPrompt = null;
+        if (enriched.userId() != null && settings != null
+                && settings.systemPrompt() != null && !settings.systemPrompt().isBlank()) {
+            systemPrompt = settings.systemPrompt();
+        }
+
         return new FullSessionContext(
                 enriched.sessionId(),
                 enriched.userId(),
@@ -188,7 +200,7 @@ public class EnrichInputMessageProcessor {
                 enriched.history(),
                 enriched.latestInput(),
                 enriched.memoirContext(),
-                settings != null ? settings.systemPrompt() : null,
+                systemPrompt,
                 enriched.timestamp()
         );
     }

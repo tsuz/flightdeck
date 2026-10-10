@@ -64,6 +64,8 @@ think-request-response
 | `CLAUDE_API_URL` | `https://api.anthropic.com/v1/messages` | Claude API endpoint |
 | `CLAUDE_MODEL` | `claude-haiku-4-5-20251001` | Claude model to use |
 | `CLAUDE_MAX_TOKENS` | `4096` | Max tokens per Claude response |
+| `CLAUDE_THINKING` | _(unset)_ | `adaptive` or `disabled`. Unset omits the `thinking` parameter, so the model's own default applies (Claude Haiku 5.5 thinks by default; Haiku 4.5 does not). Thinking blocks returned alongside a tool call are stored verbatim and replayed with the tool result. Budgeted `enabled` thinking is not offered (Haiku 5.5 rejects it). The compaction summary call sends `disabled` whenever this is set. |
+| `CLAUDE_EFFORT` | _(unset)_ | `low`, `medium`, `high`, `xhigh` or `max`; sent as `output_config.effort`. Unset omits it (model default). Not supported by Haiku 4.5. |
 | `PROMPT_CACHING` | `false` | Enable Anthropic prompt caching (adds a `cache_control` breakpoint to the system prompt). Only takes effect when the cached prefix exceeds the model's minimum cacheable length (e.g. 4,096 tokens for Haiku 4.5, 1,024 for Sonnet). |
 | `GEMINI_API_KEY` | `""` | Google Gemini API key |
 | `GEMINI_API_URL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API endpoint |

@@ -132,7 +132,7 @@ public class ClaudeApiService implements LlmApiService {
             StringBuilder conversationText = new StringBuilder();
             for (Map<String, Object> msg : messages) {
                 String role = String.valueOf(msg.getOrDefault("role", "user"));
-                String text = String.valueOf(msg.getOrDefault("content", ""));
+                String text = contentForSummary(msg.getOrDefault("content", ""));
                 conversationText.append(role.toUpperCase()).append(": ").append(text).append("\n\n");
             }
 
@@ -141,6 +141,10 @@ public class ClaudeApiService implements LlmApiService {
             body.put("max_tokens", maxTokens);
             // Cache the system prompt when enabled (see buildRequestBody). No tools to cache here.
             body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
+            // The summarizer doesn't need to reason; skip it (and its latency/cost) whenever
+            // thinking is explicitly configured, since a model like Haiku 5.5 would otherwise
+            // think by default. Effort is left to the model default.
+            applyReasoningConfig(body, AppConfig.CLAUDE_THINKING.isBlank() ? "" : "disabled", "");
             body.put("messages", List.of(Map.of("role", "user", "content", conversationText.toString())));
             // No tools
 
@@ -173,6 +177,25 @@ public class ClaudeApiService implements LlmApiService {
         }
     }
 
+    /**
+     * Renders message content for the compaction summary request, leaving out thinking blocks
+     * (opaque signatures that are useless, and large, as summary input).
+     */
+    static String contentForSummary(Object content) {
+        if (content instanceof List<?> blocks) {
+            List<Object> kept = new ArrayList<>();
+            for (Object b : blocks) {
+                if (b instanceof Map<?, ?> m
+                        && ("thinking".equals(m.get("type")) || "redacted_thinking".equals(m.get("type")))) {
+                    continue;
+                }
+                kept.add(b);
+            }
+            return String.valueOf(kept);
+        }
+        return String.valueOf(content);
+    }
+
     private Map<String, Object> buildRequestBody(String systemPrompt, List<Map<String, Object>> messages) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -184,12 +207,28 @@ public class ClaudeApiService implements LlmApiService {
         body.put("system", buildSystemBlocks(systemPrompt, AppConfig.PROMPT_CACHING));
         body.put("messages", messages);
 
+        applyReasoningConfig(body, AppConfig.CLAUDE_THINKING, AppConfig.CLAUDE_EFFORT);
+
         List<Map<String, Object>> tools = ToolDefinitions.getTools();
         if (!tools.isEmpty()) {
             body.put("tools", tools);
         }
 
         return body;
+    }
+
+    /**
+     * Adds the {@code thinking} and {@code output_config.effort} request fields. A blank
+     * value omits the field so the model's own default applies (unchanged behaviour for
+     * deployments that set neither CLAUDE_THINKING nor CLAUDE_EFFORT).
+     */
+    static void applyReasoningConfig(Map<String, Object> body, String thinking, String effort) {
+        if (thinking != null && !thinking.isBlank()) {
+            body.put("thinking", Map.of("type", thinking));
+        }
+        if (effort != null && !effort.isBlank()) {
+            body.put("output_config", Map.of("effort", effort));
+        }
     }
 
     /**
@@ -260,7 +299,12 @@ public class ClaudeApiService implements LlmApiService {
                 for (JsonNode block : contentBlocks) {
                     String type = block.path("type").asText();
 
-                    if ("text".equals(type)) {
+                    if ("thinking".equals(type) || "redacted_thinking".equals(type)) {
+                        // Keep thinking blocks verbatim (including `signature`). While the
+                        // assistant turn ends in tool_use, the API requires them to be sent
+                        // back unchanged with the tool result, in their original position.
+                        fullContentBlocks.add(mapper.convertValue(block, LinkedHashMap.class));
+                    } else if ("text".equals(type)) {
                         String text = block.path("text").asText("");
                         fullContentBlocks.add(Map.of("type", "text", "text", text));
                     } else if ("tool_use".equals(type)) {

@@ -1,5 +1,7 @@
 package io.flightdeck.think.config;
 
+import java.util.Arrays;
+
 /**
  * Environment-based configuration for the Think Consumer.
  * All values fall back to sensible defaults for local development.
@@ -39,6 +41,16 @@ public final class AppConfig {
 
     public static final int CLAUDE_MAX_TOKENS =
             Integer.parseInt(env("CLAUDE_MAX_TOKENS", "4096"));
+
+    // Extended reasoning. CLAUDE_THINKING: "" (omit the parameter; model default), "adaptive",
+    // or "disabled". CLAUDE_EFFORT: "" (omit; model default) or low|medium|high|xhigh|max.
+    // Note: Claude Haiku 5.5 thinks by default when `thinking` is omitted, and rejects
+    // budgeted `thinking: {type: "enabled"}`, so only adaptive/disabled are offered.
+    public static final String CLAUDE_THINKING =
+            validated("CLAUDE_THINKING", env("CLAUDE_THINKING", ""), "", "adaptive", "disabled");
+
+    public static final String CLAUDE_EFFORT =
+            validated("CLAUDE_EFFORT", env("CLAUDE_EFFORT", ""), "", "low", "medium", "high", "xhigh", "max");
 
     // Enable Anthropic prompt caching (cache_control breakpoints). Off by default.
     public static final boolean PROMPT_CACHING =
@@ -108,5 +120,12 @@ public final class AppConfig {
             throw new IllegalStateException("Required environment variable " + key + " is not set");
         }
         return value;
+    }
+
+    private static String validated(String name, String value, String... allowed) {
+        for (String a : allowed) {
+            if (a.equals(value)) return value;
+        }
+        throw new IllegalStateException(name + "=" + value + " is not one of " + Arrays.toString(allowed));
     }
 }

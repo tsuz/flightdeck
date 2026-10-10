@@ -377,8 +377,38 @@ public class GeminiApiService implements LlmApiService {
             }
         } else {
             // user role
-            appendOrMergeGemini(contents, "user", msg.contentAsString());
+            if (msg.content() instanceof List<?> blocks) {
+                appendOrMergeGemini(contents, "user", flattenUserBlocks(blocks));
+            } else {
+                appendOrMergeGemini(contents, "user", msg.contentAsString());
+            }
         }
+    }
+
+    /**
+     * Flattens a user content-block list to text. Gemini cannot fetch an arbitrary
+     * image URL (it needs inline bytes or a Gemini Files reference), so image blocks
+     * become a placeholder rather than being dropped silently.
+     */
+    static String flattenUserBlocks(List<?> blocks) {
+        StringBuilder sb = new StringBuilder();
+        for (Object block : blocks) {
+            if (!(block instanceof Map<?, ?> m)) continue;
+            Object type = m.get("type");
+            if (sb.length() > 0) sb.append("\n");
+            if ("text".equals(type)) {
+                sb.append(m.get("text"));
+            } else if ("image".equals(type)) {
+                Object source = m.get("source");
+                Object ref = source instanceof Map<?, ?> sm
+                        ? (sm.get("url") != null ? sm.get("url") : sm.get("file_id")) : null;
+                log.warn("Image block in user content is not forwarded to Gemini (placeholder sent): {}", ref);
+                sb.append("[image attached").append(ref != null ? ": " + ref : "").append("]");
+            } else {
+                sb.append(String.valueOf(m));
+            }
+        }
+        return sb.toString();
     }
 
     private void appendOrMergeGemini(List<Map<String, Object>> contents, String role, String text) {

@@ -315,14 +315,22 @@ class ThinkConsumerRunner:
                 else:
                     self._append_or_merge(messages, "assistant", str(content))
             else:
-                self._append_or_merge(messages, "user", str(content))
+                self._append_user(messages, content)
 
         # Add latest input
         if latest_input:
-            content = latest_input.get("content", "")
-            self._append_or_merge(messages, "user", str(content))
+            self._append_user(messages, latest_input.get("content", ""))
 
         return messages
+
+    def _append_user(self, messages: list[dict], content) -> None:
+        """User content is either text or a list of content blocks (text + image
+        url/file references). Block lists are already in Claude's shape and are
+        passed through untouched; text merges with a preceding user text turn."""
+        if isinstance(content, list):
+            messages.append({"role": "user", "content": content})
+        else:
+            self._append_or_merge(messages, "user", str(content))
 
     def _append_or_merge(self, messages: list[dict], role: str, text: str) -> None:
         """Merge consecutive same-role text messages."""
@@ -484,14 +492,37 @@ class ThinkConsumerRunner:
                 else:
                     self._append_or_merge_gemini(contents, "model", str(content))
             else:
-                self._append_or_merge_gemini(contents, "user", str(content))
+                self._append_or_merge_gemini(contents, "user", self._flatten_user_blocks(content))
 
         # Add latest input
         if latest_input:
             content = latest_input.get("content", "")
-            self._append_or_merge_gemini(contents, "user", str(content))
+            self._append_or_merge_gemini(contents, "user", self._flatten_user_blocks(content))
 
         return contents
+
+    @staticmethod
+    def _flatten_user_blocks(content) -> str:
+        """Text rendering of user content for Gemini. Gemini cannot fetch an
+        arbitrary image URL (it needs inline bytes or a Gemini Files reference),
+        so image blocks become a placeholder instead of being dropped."""
+        if not isinstance(content, list):
+            return str(content)
+        parts = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "text":
+                parts.append(str(block.get("text", "")))
+            elif btype == "image":
+                source = block.get("source") or {}
+                ref = source.get("url") or source.get("file_id")
+                logger.warning("Image block in user content is not forwarded to Gemini (placeholder sent): %s", ref)
+                parts.append(f"[image attached: {ref}]" if ref else "[image attached]")
+            else:
+                parts.append(str(block))
+        return "\n".join(parts)
 
     def _append_or_merge_gemini(self, contents: list[dict], role: str, text: str) -> None:
         """Merge consecutive same-role text messages for Gemini."""

@@ -98,6 +98,15 @@ public class ClaudeApiService implements LlmApiService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
+                // Image blocks are URL / file references the provider fetches on every
+                // turn (history is replayed). If one has expired or been deleted, Claude
+                // answers 400 for the rest of the session — degrade the references to
+                // text placeholders and retry once instead of failing every later turn.
+                if (response.statusCode() == 400 && mentionsImage(response.body()) && hasImageBlocks(messages)) {
+                    log.warn("[{}] Claude rejected an image reference (HTTP 400: {}) — retrying with image blocks replaced by text placeholders",
+                            sessionId, response.body());
+                    return call(systemPrompt, stripImageBlocks(messages), sessionId, userId);
+                }
                 log.error("[{}] Claude API returned status {}: {}", sessionId, response.statusCode(), response.body());
                 log.error("[{}] Request messages:\n{}", sessionId, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(messages));
                 throw new RuntimeException("Claude API error: HTTP " + response.statusCode());
@@ -327,6 +336,47 @@ public class ClaudeApiService implements LlmApiService {
         }
     }
 
+    /** Placeholder a dead image reference is replaced with on retry. */
+    static final String IMAGE_UNAVAILABLE = "[image no longer available]";
+
+    static boolean mentionsImage(String errorBody) {
+        return errorBody != null && errorBody.toLowerCase().contains("image");
+    }
+
+    static boolean hasImageBlocks(List<Map<String, Object>> messages) {
+        for (Map<String, Object> msg : messages) {
+            if (msg.get("content") instanceof List<?> blocks) {
+                for (Object b : blocks) {
+                    if (b instanceof Map<?, ?> m && "image".equals(m.get("type"))) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Copy of {@code messages} with every image block replaced by a text placeholder. */
+    static List<Map<String, Object>> stripImageBlocks(List<Map<String, Object>> messages) {
+        List<Map<String, Object>> out = new ArrayList<>(messages.size());
+        for (Map<String, Object> msg : messages) {
+            if (msg.get("content") instanceof List<?> blocks) {
+                List<Object> newBlocks = new ArrayList<>(blocks.size());
+                for (Object b : blocks) {
+                    if (b instanceof Map<?, ?> m && "image".equals(m.get("type"))) {
+                        newBlocks.add(Map.of("type", "text", "text", IMAGE_UNAVAILABLE));
+                    } else {
+                        newBlocks.add(b);
+                    }
+                }
+                Map<String, Object> copy = new LinkedHashMap<>(msg);
+                copy.put("content", newBlocks);
+                out.add(copy);
+            } else {
+                out.add(msg);
+            }
+        }
+        return out;
+    }
+
     /**
      * Converts internal MessageInput history into Claude API message format.
      * Groups consecutive same-role messages and handles tool-result messages.
@@ -368,8 +418,9 @@ public class ClaudeApiService implements LlmApiService {
                 messages.add(Map.of("role", "user", "content", toolResultBlocks));
             }
         } else if (msg.content() instanceof List<?>) {
-            // Structured content blocks (e.g. assistant message with text + tool_use)
-            // Pass through as-is to preserve tool_use IDs for the Claude API
+            // Structured content blocks: an assistant message with text + tool_use, or a
+            // user message carrying image blocks (url / file_id references) next to text.
+            // Pass through as-is — the blocks are already in Claude's content-block shape.
             messages.add(new LinkedHashMap<>(Map.of("role", role, "content", msg.content())));
         } else {
             // Plain text content — merge consecutive same-role messages to avoid API errors

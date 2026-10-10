@@ -129,6 +129,22 @@ class TestToClaudeMessages:
         assert replayed[0] == {"role": "user", "content": blocks}
         assert replayed[2] == {"role": "user", "content": "what now?"}
 
+    def test_gemini_user_image_blocks_flatten_to_placeholder(self):
+        runner = make_runner()
+        blocks = [
+            {"type": "image", "source": {"type": "url", "url": "https://storage.example.com/shot.png"}},
+            {"type": "text", "text": "this is what I see"},
+        ]
+        contents = runner._to_gemini_messages(
+            history=[{"role": "user", "content": blocks}, {"role": "assistant", "content": "ok"}],
+            latest_input={"content": blocks},
+        )
+        first = contents[0]["parts"][0]["text"]
+        assert "[image attached: https://storage.example.com/shot.png]" in first
+        assert "this is what I see" in first
+        assert "{'type'" not in first
+        assert "{'type'" not in contents[-1]["parts"][-1]["text"]
+
 
 class TestParseResponse:
     @patch.dict("os.environ", {"INPUT_TOKEN_PRICE": "3", "OUTPUT_TOKEN_PRICE": "15"})

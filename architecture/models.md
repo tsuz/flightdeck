@@ -117,7 +117,11 @@ array to the provider as-is. Image sources must be references — `{"type":"url"
 (the provider fetches it, so the URL must be publicly reachable) or `{"type":"file","file_id":"..."}`
 (Anthropic Files API). Inline base64 is rejected because the whole history is copied into
 every downstream record. No size cap is applied by the API — the Kafka record limit and the
-model's own image limits are the guard. Gemini receives a text placeholder for image blocks.
+model's own image limits are the guard. Gemini receives a text placeholder for image blocks
+(Java think consumer, Python SDK and TypeScript SDK alike). Because history is replayed, the
+provider re-fetches a `url` image on every later turn; if Claude rejects a reference that has
+expired or been deleted (HTTP 400 mentioning "image"), the Java think consumer retries once
+with the image blocks replaced by `[image no longer available]` instead of failing the session.
 
 ```json
 {

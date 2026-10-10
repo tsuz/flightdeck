@@ -355,16 +355,52 @@ export class ThinkConsumerRunner {
           this.appendOrMerge(messages, "assistant", String(content));
         }
       } else {
-        this.appendOrMerge(messages, "user", String(content));
+        this.appendUser(messages, content);
       }
     }
 
     // Add latest input
     if (latestInput && latestInput.content) {
-      this.appendOrMerge(messages, "user", String(latestInput.content));
+      this.appendUser(messages, latestInput.content);
     }
 
     return messages;
+  }
+
+  /**
+   * User content is either text or a list of content blocks (text + image
+   * url/file references). Block lists are already in Claude's shape and are
+   * passed through untouched; text merges with a preceding user text turn.
+   */
+  private appendUser(messages: Record<string, unknown>[], content: unknown): void {
+    if (Array.isArray(content)) {
+      messages.push({ role: "user", content });
+    } else {
+      this.appendOrMerge(messages, "user", String(content));
+    }
+  }
+
+  /**
+   * Text rendering of user content for Gemini. Gemini cannot fetch an arbitrary
+   * image URL (it needs inline bytes or a Gemini Files reference), so image
+   * blocks become a placeholder instead of being dropped.
+   */
+  static flattenUserBlocks(content: unknown): string {
+    if (!Array.isArray(content)) return String(content);
+    const parts: string[] = [];
+    for (const block of content as Record<string, unknown>[]) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type === "text") {
+        parts.push(String(block.text ?? ""));
+      } else if (block.type === "image") {
+        const source = (block.source ?? {}) as Record<string, unknown>;
+        const ref = source.url ?? source.file_id;
+        parts.push(ref ? `[image attached: ${ref}]` : "[image attached]");
+      } else {
+        parts.push(JSON.stringify(block));
+      }
+    }
+    return parts.join("\n");
   }
 
   private appendOrMerge(messages: Record<string, unknown>[], role: string, text: string): void {
@@ -539,12 +575,12 @@ export class ThinkConsumerRunner {
           this.appendOrMergeGemini(contents, "model", String(content));
         }
       } else {
-        this.appendOrMergeGemini(contents, "user", String(content));
+        this.appendOrMergeGemini(contents, "user", ThinkConsumerRunner.flattenUserBlocks(content));
       }
     }
 
     if (latestInput && latestInput.content) {
-      this.appendOrMergeGemini(contents, "user", String(latestInput.content));
+      this.appendOrMergeGemini(contents, "user", ThinkConsumerRunner.flattenUserBlocks(latestInput.content));
     }
 
     return contents;

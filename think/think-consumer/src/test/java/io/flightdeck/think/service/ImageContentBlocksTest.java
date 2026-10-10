@@ -55,6 +55,27 @@ class ImageContentBlocksTest {
     }
 
     @Test
+    @DisplayName("Dead image references are swapped for text placeholders on retry, nothing else changes")
+    void stripImageBlocksReplacesOnlyImages() {
+        List<Map<String, Object>> messages = ClaudeApiService.toClaudeMessages(
+                List.of(msg("user", IMAGE_AND_TEXT), msg("assistant", "I see it.")),
+                msg("user", "and now?"));
+        assertThat(ClaudeApiService.hasImageBlocks(messages)).isTrue();
+
+        List<Map<String, Object>> stripped = ClaudeApiService.stripImageBlocks(messages);
+        assertThat(ClaudeApiService.hasImageBlocks(stripped)).isFalse();
+        assertThat(stripped.get(0).get("content")).isEqualTo(List.of(
+                Map.of("type", "text", "text", ClaudeApiService.IMAGE_UNAVAILABLE),
+                Map.of("type", "text", "text", "this is what I see when I press Start")));
+        assertThat(stripped.get(1).get("content")).isEqualTo("I see it.");
+        assertThat(stripped.get(2).get("content")).isEqualTo("and now?");
+        // original untouched
+        assertThat(ClaudeApiService.hasImageBlocks(messages)).isTrue();
+        assertThat(ClaudeApiService.mentionsImage("{\"error\":{\"message\":\"Could not process image\"}}")).isTrue();
+        assertThat(ClaudeApiService.mentionsImage("{\"error\":{\"message\":\"too many tokens\"}}")).isFalse();
+    }
+
+    @Test
     @DisplayName("Gemini flattening emits a placeholder with the reference instead of List.toString()")
     void geminiFlattensImageBlocks() {
         String text = GeminiApiService.flattenUserBlocks(IMAGE_AND_TEXT);

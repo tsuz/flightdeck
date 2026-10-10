@@ -94,6 +94,28 @@ class ChatHandlerContentValidationTest {
     }
 
     @Test
+    void stripsCallerSuppliedExtrasFromBlocks() throws Exception {
+        JsonNode content = ChatHandler.parseContent(body("""
+                {"content":[
+                  {"type":"text","text":"x","cache_control":{"type":"ephemeral"}},
+                  {"type":"image","source":{"type":"url","url":"https://x.test/a.png","foo":1},"bar":2}
+                ]}"""));
+        assertEquals("{\"type\":\"text\",\"text\":\"x\"}", content.get(0).toString());
+        assertEquals("{\"type\":\"image\",\"source\":{\"type\":\"url\",\"url\":\"https://x.test/a.png\"}}",
+                content.get(1).toString());
+    }
+
+    @Test
+    void rejectsMalformedHttpsStrings() {
+        assertFalse(ChatHandler.isHttpsUrl("https://"));
+        assertFalse(ChatHandler.isHttpsUrl("https:// evil"));
+        assertFalse(ChatHandler.isHttpsUrl("https://[::1"));
+        assertFalse(ChatHandler.isHttpsUrl("http://x.test/a.png"));
+        assertTrue(ChatHandler.isHttpsUrl("https://storage.crisp.chat/users/upload/x/a.png?x=1"));
+        assertTrue(ChatHandler.isHttpsUrl("HTTPS://x.test/a.png"));
+    }
+
+    @Test
     void noSizeOrCountCapOnReferences() throws Exception {
         // Size is policed by the Kafka record limit and the model, not here.
         StringBuilder sb = new StringBuilder("{\"content\":[");

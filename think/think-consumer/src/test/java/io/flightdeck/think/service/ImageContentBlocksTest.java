@@ -71,8 +71,6 @@ class ImageContentBlocksTest {
         assertThat(stripped.get(2).get("content")).isEqualTo("and now?");
         // original untouched
         assertThat(ClaudeApiService.hasImageBlocks(messages)).isTrue();
-        assertThat(ClaudeApiService.mentionsImage("{\"error\":{\"message\":\"Could not process image\"}}")).isTrue();
-        assertThat(ClaudeApiService.mentionsImage("{\"error\":{\"message\":\"too many tokens\"}}")).isFalse();
     }
 
     @Test

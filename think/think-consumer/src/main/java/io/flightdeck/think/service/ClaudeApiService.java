@@ -102,7 +102,10 @@ public class ClaudeApiService implements LlmApiService {
                 // turn (history is replayed). If one has expired or been deleted, Claude
                 // answers 400 for the rest of the session — degrade the references to
                 // text placeholders and retry once instead of failing every later turn.
-                if (response.statusCode() == 400 && mentionsImage(response.body()) && hasImageBlocks(messages)) {
+                // Any 400 qualifies: the error text varies ("Unable to download the
+                // file…", "Could not process image…"), and a 400 caused by something
+                // else simply recurs on the retry (one extra call, same outcome).
+                if (response.statusCode() == 400 && hasImageBlocks(messages)) {
                     log.warn("[{}] Claude rejected an image reference (HTTP 400: {}) — retrying with image blocks replaced by text placeholders",
                             sessionId, response.body());
                     return call(systemPrompt, stripImageBlocks(messages), sessionId, userId);
@@ -382,10 +385,6 @@ public class ClaudeApiService implements LlmApiService {
 
     /** Placeholder a dead image reference is replaced with on retry. */
     static final String IMAGE_UNAVAILABLE = "[image no longer available]";
-
-    static boolean mentionsImage(String errorBody) {
-        return errorBody != null && errorBody.toLowerCase().contains("image");
-    }
 
     static boolean hasImageBlocks(List<Map<String, Object>> messages) {
         for (Map<String, Object> msg : messages) {

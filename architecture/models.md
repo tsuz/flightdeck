@@ -116,8 +116,8 @@ A user message with an image. The chat API accepts `content` as a string or an a
 array to the provider as-is. Image sources must be references — `{"type":"url","url":"https://..."}`
 (the provider fetches it, so the URL must be publicly reachable) or `{"type":"file","file_id":"..."}`
 (Anthropic Files API). Inline base64 is rejected because the whole history is copied into
-every downstream record (`MAX_CONTENT_BYTES`, default 64 KB). Gemini receives a text placeholder
-for image blocks.
+every downstream record. No size cap is applied by the API — the Kafka record limit and the
+model's own image limits are the guard. Gemini receives a text placeholder for image blocks.
 
 ```json
 {

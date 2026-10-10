@@ -94,20 +94,15 @@ class ChatHandlerContentValidationTest {
     }
 
     @Test
-    void rejectsOversizedContent() throws Exception {
-        String big = "x".repeat(ChatHandler.MAX_CONTENT_BYTES + 1);
-        assertThrows(IllegalArgumentException.class, () -> ChatHandler.parseContent(body(
-                "{\"content\":[{\"type\":\"text\",\"text\":\"" + big + "\"}]}")));
-    }
-
-    @Test
-    void rejectsTooManyImages() throws Exception {
+    void noSizeOrCountCapOnReferences() throws Exception {
+        // Size is policed by the Kafka record limit and the model, not here.
         StringBuilder sb = new StringBuilder("{\"content\":[");
-        for (int i = 0; i <= ChatHandler.MAX_IMAGE_BLOCKS; i++) {
+        for (int i = 0; i < 50; i++) {
             if (i > 0) sb.append(',');
             sb.append("{\"type\":\"image\",\"source\":{\"type\":\"url\",\"url\":\"https://x.test/").append(i).append(".png\"}}");
         }
-        sb.append("]}");
-        assertThrows(IllegalArgumentException.class, () -> ChatHandler.parseContent(body(sb.toString())));
+        sb.append(",{\"type\":\"text\",\"text\":\"").append("x".repeat(200_000)).append("\"}]}");
+        JsonNode content = ChatHandler.parseContent(body(sb.toString()));
+        assertEquals(51, content.size());
     }
 }

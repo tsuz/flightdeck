@@ -30,8 +30,9 @@ import java.time.Instant;
  * </pre>
  * Only {@code text} and {@code image} blocks are accepted, and an image source
  * must be a {@code url} (https) or a Files API {@code file} id — never inline
- * base64. The full session history is replayed inside every downstream Kafka
- * record, so content carries references, not bytes ({@link #MAX_CONTENT_BYTES}).
+ * base64, since the full session history is replayed inside every downstream
+ * Kafka record. No size limit is enforced here: the Kafka record limit and the
+ * model's own image limits are the guard.
  *
  * Enriches it into a full message-input record and produces to Kafka:
  *   { "session_id": "...", "user_id": "user_42", "role": "user",
@@ -145,18 +146,6 @@ public class ChatHandler implements HttpHandler {
     }
 
     /**
-     * Upper bound on the serialized size of a content-block array. Images travel
-     * as URL / file references, so a legitimate message is a few hundred bytes;
-     * the cap keeps inline payloads out of Kafka (1 MB default record limit, and
-     * the history is copied into every think-request-response record).
-     */
-    static final int MAX_CONTENT_BYTES =
-            Integer.parseInt(System.getenv().getOrDefault("MAX_CONTENT_BYTES", "65536"));
-
-    /** Max image blocks in one message (the Claude API allows 100 per request). */
-    static final int MAX_IMAGE_BLOCKS = 20;
-
-    /**
      * Validates and returns the {@code content} field: a non-blank string, or a
      * non-empty array of {@code text} / {@code image} blocks. Throws
      * {@link IllegalArgumentException} (mapped to HTTP 400) on anything else.
@@ -178,7 +167,6 @@ public class ChatHandler implements HttpHandler {
         if (content.isEmpty()) {
             throw new IllegalArgumentException("'content' must not be empty");
         }
-        int images = 0;
         for (JsonNode block : content) {
             if (!block.isObject()) {
                 throw new IllegalArgumentException("content blocks must be objects");
@@ -191,9 +179,6 @@ public class ChatHandler implements HttpHandler {
                     }
                 }
                 case "image" -> {
-                    if (++images > MAX_IMAGE_BLOCKS) {
-                        throw new IllegalArgumentException("too many image blocks (max " + MAX_IMAGE_BLOCKS + ")");
-                    }
                     JsonNode source = block.path("source");
                     if (!source.isObject()) {
                         throw new IllegalArgumentException("image block requires a 'source' object");
@@ -215,10 +200,6 @@ public class ChatHandler implements HttpHandler {
                 }
                 default -> throw new IllegalArgumentException("unsupported content block type: '" + type + "'");
             }
-        }
-        int bytes = content.toString().getBytes(StandardCharsets.UTF_8).length;
-        if (bytes > MAX_CONTENT_BYTES) {
-            throw new IllegalArgumentException("content exceeds " + MAX_CONTENT_BYTES + " bytes");
         }
         return content;
     }

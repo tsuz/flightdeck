@@ -139,7 +139,7 @@ public class ClaudeMemoirService {
         if (snapshot.thinkResponse() != null && snapshot.thinkResponse().messages() != null) {
             for (MessageInput msg : snapshot.thinkResponse().messages()) {
                 String role = msg.role() != null ? msg.role() : "unknown";
-                String content = msg.contentAsString();
+                String content = flattenContent(msg.content());
                 if (content != null && !content.isBlank()) {
                     sb.append("[").append(role).append("]: ").append(content).append("\n\n");
                 }
@@ -149,6 +149,33 @@ public class ClaudeMemoirService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Renders message content as plain text for the memoir prompt. Block lists
+     * (assistant text + tool_use, user text + image references) are flattened
+     * instead of falling back to Java's List.toString().
+     */
+    static String flattenContent(Object content) {
+        if (content == null) return null;
+        if (content instanceof String s) return s;
+        if (content instanceof java.util.List<?> blocks) {
+            StringBuilder sb = new StringBuilder();
+            for (Object block : blocks) {
+                if (!(block instanceof java.util.Map<?, ?> m)) continue;
+                Object type = m.get("type");
+                String piece;
+                if ("text".equals(type)) piece = String.valueOf(m.get("text"));
+                else if ("image".equals(type)) piece = "[image attached]";
+                else if ("tool_use".equals(type)) piece = "[Called tool: " + m.get("name") + "]";
+                else if (m.containsKey("tool_use_id")) piece = "[Tool result: " + (m.get("result") != null ? m.get("result") : m.get("content")) + "]";
+                else continue;
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(piece);
+            }
+            return sb.toString();
+        }
+        return String.valueOf(content);
     }
 
     /**

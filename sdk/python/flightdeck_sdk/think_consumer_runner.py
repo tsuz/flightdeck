@@ -315,14 +315,22 @@ class ThinkConsumerRunner:
                 else:
                     self._append_or_merge(messages, "assistant", str(content))
             else:
-                self._append_or_merge(messages, "user", str(content))
+                self._append_user(messages, content)
 
         # Add latest input
         if latest_input:
-            content = latest_input.get("content", "")
-            self._append_or_merge(messages, "user", str(content))
+            self._append_user(messages, latest_input.get("content", ""))
 
         return messages
+
+    def _append_user(self, messages: list[dict], content) -> None:
+        """User content is either text or a list of content blocks (text + image
+        url/file references). Block lists are already in Claude's shape and are
+        passed through untouched; text merges with a preceding user text turn."""
+        if isinstance(content, list):
+            messages.append({"role": "user", "content": content})
+        else:
+            self._append_or_merge(messages, "user", str(content))
 
     def _append_or_merge(self, messages: list[dict], role: str, text: str) -> None:
         """Merge consecutive same-role text messages."""

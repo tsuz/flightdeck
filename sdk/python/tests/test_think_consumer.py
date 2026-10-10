@@ -100,6 +100,35 @@ class TestToClaudeMessages:
         assert "Hi" in messages[0]["content"]
         assert "Also this" in messages[0]["content"]
 
+    def test_user_image_blocks_pass_through(self):
+        """A user turn carrying an image url reference + text is a block list in
+        Claude's shape; it must be forwarded untouched, both as the latest input
+        and when replayed from history (never str()-ified)."""
+        runner = make_runner()
+        blocks = [
+            {"type": "image", "source": {"type": "url", "url": "https://storage.example.com/shot.png"}},
+            {"type": "text", "text": "this is what I see"},
+        ]
+        messages = runner._to_claude_messages(
+            history=[
+                {"role": "user", "content": "it crashes"},
+                {"role": "assistant", "content": "Can you send a screenshot?"},
+            ],
+            latest_input={"content": blocks},
+        )
+        assert len(messages) == 3
+        assert messages[2] == {"role": "user", "content": blocks}
+
+        replayed = runner._to_claude_messages(
+            history=[
+                {"role": "user", "content": blocks},
+                {"role": "assistant", "content": "I see a permission error."},
+            ],
+            latest_input={"content": "what now?"},
+        )
+        assert replayed[0] == {"role": "user", "content": blocks}
+        assert replayed[2] == {"role": "user", "content": "what now?"}
+
 
 class TestParseResponse:
     @patch.dict("os.environ", {"INPUT_TOKEN_PRICE": "3", "OUTPUT_TOKEN_PRICE": "15"})

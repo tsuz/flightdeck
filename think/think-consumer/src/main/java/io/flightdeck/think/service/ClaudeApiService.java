@@ -368,8 +368,9 @@ public class ClaudeApiService implements LlmApiService {
                 messages.add(Map.of("role", "user", "content", toolResultBlocks));
             }
         } else if (msg.content() instanceof List<?>) {
-            // Structured content blocks (e.g. assistant message with text + tool_use)
-            // Pass through as-is to preserve tool_use IDs for the Claude API
+            // Structured content blocks: an assistant message with text + tool_use, or a
+            // user message carrying image blocks (url / file_id references) next to text.
+            // Pass through as-is — the blocks are already in Claude's content-block shape.
             messages.add(new LinkedHashMap<>(Map.of("role", role, "content", msg.content())));
         } else {
             // Plain text content — merge consecutive same-role messages to avoid API errors

@@ -20,6 +20,19 @@ import java.time.Instant;
  * Accepts a minimal payload:
  *   { "session_id": "session-20260315-2250", "content": "hello" }
  *
+ * <p>{@code content} may also be an array of content blocks so a caller can
+ * attach images by reference (the think consumer passes block lists straight
+ * through to the LLM provider):
+ * <pre>
+ *   { "session_id": "...", "content": [
+ *       { "type": "image", "source": { "type": "url", "url": "https://..." } },
+ *       { "type": "text",  "text": "this is what I see" } ] }
+ * </pre>
+ * Only {@code text} and {@code image} blocks are accepted, and an image source
+ * must be a {@code url} (https) or a Files API {@code file} id — never inline
+ * base64. The full session history is replayed inside every downstream Kafka
+ * record, so content carries references, not bytes ({@link #MAX_CONTENT_BYTES}).
+ *
  * Enriches it into a full message-input record and produces to Kafka:
  *   { "session_id": "...", "user_id": "user_42", "role": "user",
  *     "content": "hello", "timestamp": "...",
@@ -74,7 +87,7 @@ public class ChatHandler implements HttpHandler {
             JsonNode body = mapper.readTree(is);
 
             String sessionId = requireField(body, "session_id");
-            String content = requireField(body, "content");
+            JsonNode content = parseContent(body);
 
             // Transport-level reply routing (multi-agent). Written to the reply-to
             // topic keyed by session_id; never placed into the message content.
@@ -103,7 +116,7 @@ public class ChatHandler implements HttpHandler {
             message.put("session_id", sessionId);
             message.put("user_id", body.has("user_id") ? body.get("user_id").asText() : "user_42");
             message.put("role", "user");
-            message.put("content", content);
+            message.set("content", content);
             message.put("timestamp", Instant.now().toString());
 
             ObjectNode metadata = mapper.createObjectNode();
@@ -115,7 +128,8 @@ public class ChatHandler implements HttpHandler {
 
             producer.send(sessionId, messageJson);
 
-            log.info("[{}] Produced message to message-input: {}", sessionId, truncate(content, 80));
+            log.info("[{}] Produced message to message-input: {}", sessionId,
+                    truncate(summarizeContent(content), 80));
 
             ObjectNode response = mapper.createObjectNode();
             response.put("status", "ok");
@@ -128,6 +142,101 @@ public class ChatHandler implements HttpHandler {
             log.error("Failed to handle chat request", e);
             sendJson(exchange, 500, "{\"error\":\"Internal server error\"}");
         }
+    }
+
+    /**
+     * Upper bound on the serialized size of a content-block array. Images travel
+     * as URL / file references, so a legitimate message is a few hundred bytes;
+     * the cap keeps inline payloads out of Kafka (1 MB default record limit, and
+     * the history is copied into every think-request-response record).
+     */
+    static final int MAX_CONTENT_BYTES =
+            Integer.parseInt(System.getenv().getOrDefault("MAX_CONTENT_BYTES", "65536"));
+
+    /** Max image blocks in one message (the Claude API allows 100 per request). */
+    static final int MAX_IMAGE_BLOCKS = 20;
+
+    /**
+     * Validates and returns the {@code content} field: a non-blank string, or a
+     * non-empty array of {@code text} / {@code image} blocks. Throws
+     * {@link IllegalArgumentException} (mapped to HTTP 400) on anything else.
+     */
+    static JsonNode parseContent(JsonNode body) {
+        if (body == null || !body.hasNonNull("content")) {
+            throw new IllegalArgumentException("Missing required field: content");
+        }
+        JsonNode content = body.get("content");
+        if (content.isTextual()) {
+            if (content.asText().isBlank()) {
+                throw new IllegalArgumentException("Missing required field: content");
+            }
+            return content;
+        }
+        if (!content.isArray()) {
+            throw new IllegalArgumentException("'content' must be a string or an array of content blocks");
+        }
+        if (content.isEmpty()) {
+            throw new IllegalArgumentException("'content' must not be empty");
+        }
+        int images = 0;
+        for (JsonNode block : content) {
+            if (!block.isObject()) {
+                throw new IllegalArgumentException("content blocks must be objects");
+            }
+            String type = block.path("type").asText("");
+            switch (type) {
+                case "text" -> {
+                    if (!block.path("text").isTextual() || block.get("text").asText().isBlank()) {
+                        throw new IllegalArgumentException("text block requires a non-empty 'text'");
+                    }
+                }
+                case "image" -> {
+                    if (++images > MAX_IMAGE_BLOCKS) {
+                        throw new IllegalArgumentException("too many image blocks (max " + MAX_IMAGE_BLOCKS + ")");
+                    }
+                    JsonNode source = block.path("source");
+                    if (!source.isObject()) {
+                        throw new IllegalArgumentException("image block requires a 'source' object");
+                    }
+                    String sourceType = source.path("type").asText("");
+                    if ("url".equals(sourceType)) {
+                        String url = source.path("url").asText("");
+                        if (!url.startsWith("https://")) {
+                            throw new IllegalArgumentException("image url must be an https URL");
+                        }
+                    } else if ("file".equals(sourceType)) {
+                        if (source.path("file_id").asText("").isBlank()) {
+                            throw new IllegalArgumentException("image file source requires 'file_id'");
+                        }
+                    } else {
+                        throw new IllegalArgumentException(
+                                "image source type must be 'url' or 'file' (inline base64 is not accepted)");
+                    }
+                }
+                default -> throw new IllegalArgumentException("unsupported content block type: '" + type + "'");
+            }
+        }
+        int bytes = content.toString().getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_CONTENT_BYTES) {
+            throw new IllegalArgumentException("content exceeds " + MAX_CONTENT_BYTES + " bytes");
+        }
+        return content;
+    }
+
+    /** One-line text rendering of content for logs: text blocks verbatim, images as a marker. */
+    static String summarizeContent(JsonNode content) {
+        if (content == null) return "";
+        if (content.isTextual()) return content.asText();
+        StringBuilder sb = new StringBuilder();
+        for (JsonNode block : content) {
+            if (sb.length() > 0) sb.append(' ');
+            if ("image".equals(block.path("type").asText())) {
+                sb.append("[image]");
+            } else {
+                sb.append(block.path("text").asText(""));
+            }
+        }
+        return sb.toString();
     }
 
     private static String requireField(JsonNode body, String field) {

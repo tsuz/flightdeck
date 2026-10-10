@@ -94,7 +94,7 @@ Raw user messages and tool results entering the pipeline.
 | `session_id` | String | | Unique session identifier |
 | `user_id` | String | | User identifier |
 | `role` | String | | `"user"`, `"assistant"`, or `"tool"` |
-| `content` | Object | | Plain text (String) or structured data (List/Map for tool results) |
+| `content` | Object | | Plain text (String), a list of content blocks (user text + image references, assistant text + tool_use), or structured data (List/Map for tool results) |
 | `timestamp` | String | | ISO 8601 timestamp |
 | `metadata` | Map\<String, Object\> | `null` | Optional metadata |
 
@@ -108,6 +108,27 @@ Raw user messages and tool results entering the pipeline.
   "metadata": {
     "source": "web_chat"
   }
+}
+```
+
+A user message with an image. The chat API accepts `content` as a string or an array of
+`text` / `image` blocks in the Claude content-block shape; the think consumer forwards the
+array to the provider as-is. Image sources must be references — `{"type":"url","url":"https://..."}`
+(the provider fetches it, so the URL must be publicly reachable) or `{"type":"file","file_id":"..."}`
+(Anthropic Files API). Inline base64 is rejected because the whole history is copied into
+every downstream record (`MAX_CONTENT_BYTES`, default 64 KB). Gemini receives a text placeholder
+for image blocks.
+
+```json
+{
+  "session_id": "sess-12345",
+  "user_id": "user-789",
+  "role": "user",
+  "content": [
+    { "type": "image", "source": { "type": "url", "url": "https://files.example.com/screenshot.png" } },
+    { "type": "text", "text": "This is what I see when I press Start" }
+  ],
+  "timestamp": "2025-04-04T10:30:00Z"
 }
 ```
 

@@ -428,6 +428,10 @@ public class ThinkConsumer implements AutoCloseable {
                     if (block instanceof Map<?, ?> m) {
                         if ("text".equals(m.get("type"))) {
                             sb.append(m.get("text"));
+                        } else if ("image".equals(m.get("type"))) {
+                            // Images are URL/file references the summarizer can't see;
+                            // record that one was shared so the summary doesn't lose it.
+                            sb.append("[image attached]");
                         } else if ("tool_use".equals(m.get("type"))) {
                             sb.append("[Called tool: ").append(m.get("name")).append("]");
                         } else if (m.containsKey("tool_use_id")) {

@@ -1,0 +1,90 @@
+# All-in-one compose: Kafka + every Flightdeck JVM service in a single app container.
+#
+#   docker compose -f docker-compose.all-in-one.yml up --build
+#
+# Requires CLAUDE_API_KEY in the environment (or a .env file next to this one).
+services:
+
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:4.1.1
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─── All-in-one application container (api + think + processing + memoir + monitoring) ──
+
+  flightdeck:
+    build:
+      context: .
+      dockerfile: Dockerfile-all-in-one
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    # nginx in the frontend image proxies to the hostname "api"; expose that alias
+    # so it resolves to this all-in-one container.
+    networks:
+      default:
+        aliases:
+          - api
+    volumes:
+      - ./examples/lead-followup-agent/tools.json:/app/tools.json:ro
+      - ./examples/lead-followup-agent/system-prompt.txt:/app/system-prompt.txt:ro
+    # Supplies CLAUDE_API_KEY (and any other example vars) directly to the container.
+    # Note: vars listed under `environment:` below override anything from env_file,
+    # so CLAUDE_API_KEY is intentionally NOT repeated there.
+    env_file:
+      - ./examples/lead-followup-agent/.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      AGENT_NAME: ${AGENT_NAME:-lead-followup}
+      PORT: 8000
+      WS_PORT: 8001
+      MEMOIR_ENABLED: ${MEMOIR_ENABLED:-false}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-8096}
+      INPUT_TOKEN_PRICE: ${INPUT_TOKEN_PRICE:-1}
+      OUTPUT_TOKEN_PRICE: ${OUTPUT_TOKEN_PRICE:-5}
+      BUDGET_PRICE_PER_SESSION: ${BUDGET_PRICE_PER_SESSION:-0.5}
+      TOOLS_JSON_FILE: /app/tools.json
+      SYSTEM_PROMPT_FILE: /app/system-prompt.txt
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+
+  frontend:
+    image: ghcr.io/tsuz/flightdeck/frontend:${FLIGHTDECK_VERSION:-latest}
+    ports:
+      - "80:80"
+    depends_on:
+      - flightdeck
+
+volumes:
+  kafka-data:

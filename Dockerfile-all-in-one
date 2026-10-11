@@ -1,0 +1,40 @@
+# All-in-one image: builds and runs every Flightdeck JVM service in one container.
+#
+# Build context MUST be the repo root:
+#   docker build -f Dockerfile-all-in-one -t flightdeck-all-in-one .
+#
+# Kafka is NOT included — run it as its own container or use a managed broker,
+# and point KAFKA_BOOTSTRAP_SERVERS at it.
+
+# ---- Build stage: compile every module's JAR ----
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /src
+COPY . .
+RUN mvn -q -Dmaven.test.skip=true -f api/chat-api/pom.xml package \
+ && mvn -q -Dmaven.test.skip=true -f think/think-consumer/pom.xml package \
+ && mvn -q -Dmaven.test.skip=true -f processor-apps/processing/pom.xml package \
+ && mvn -q -Dmaven.test.skip=true -f memoir/update-memoir-consumer/pom.xml package \
+ && mvn -q -Dmaven.test.skip=true -f monitoring/logging-consumer/pom.xml package
+
+# ---- Runtime stage: all JARs in one image ----
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+COPY --from=build /src/api/chat-api/target/chat-api-0.1.0-SNAPSHOT.jar                                 api.jar
+COPY --from=build /src/think/think-consumer/target/think-consumer-0.1.0-SNAPSHOT.jar                   think.jar
+COPY --from=build /src/processor-apps/processing/target/flightdeck-streams-0.1.0-SNAPSHOT.jar          processing.jar
+COPY --from=build /src/memoir/update-memoir-consumer/target/update-memoir-consumer-0.1.0-SNAPSHOT.jar  memoir.jar
+COPY --from=build /src/monitoring/logging-consumer/target/monitoring-consumer-0.1.0-SNAPSHOT.jar       monitoring.jar
+COPY scripts/start-all-in-one.sh ./start-all-in-one.sh
+RUN chmod +x ./start-all-in-one.sh
+
+# Shared defaults; override per service via -e / compose environment.
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092 \
+    PORT=8000 \
+    WS_PORT=8001 \
+    MEMOIR_ENABLED=true \
+    CLAUDE_MODEL=claude-sonnet-4-20250514 \
+    TOOLS_JSON_FILE=/app/tools.json
+
+EXPOSE 8000 8001
+ENTRYPOINT ["./start-all-in-one.sh"]

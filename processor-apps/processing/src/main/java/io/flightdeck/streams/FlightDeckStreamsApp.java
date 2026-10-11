@@ -6,6 +6,7 @@ import io.flightdeck.streams.processors.EndTurnProcessor;
 import io.flightdeck.streams.processors.EnrichInputMessageProcessor;
 import io.flightdeck.streams.processors.ExtractToolUseItemsProcessor;
 import io.flightdeck.streams.processors.MemoirSessionEndProcessor;
+import io.flightdeck.streams.processors.SessionConcurrencyGuardProcessor;
 import io.flightdeck.streams.processors.SessionEndProcessor;
 import io.flightdeck.streams.processors.TransformToolUseDoneProcessor;
 import io.flightdeck.streams.model.ThinkResponse;
@@ -160,6 +161,10 @@ public class FlightDeckStreamsApp {
         );
 
         // ── Register each processor fragment ──────────────────────────────────
+        // Admission control runs first: it consumes message-input and produces
+        // admitted-message-input, dropping new user messages whose session has a
+        // turn still in progress (so the LLM never sees an unanswered tool_use).
+        SessionConcurrencyGuardProcessor.register(builder, thinkStream, replyToTable);
         EnrichInputMessageProcessor.register(builder, memoirTable, thinkTable, userSettingsTable);
         ExtractToolUseItemsProcessor.register(builder, thinkStream);
         EndTurnProcessor.register(builder, thinkStream, replyToTable);
@@ -194,6 +199,7 @@ public class FlightDeckStreamsApp {
 
         List<String> requiredTopics = new java.util.ArrayList<>(List.of(
                 Topics.MESSAGE_INPUT,
+                Topics.ADMITTED_MESSAGE_INPUT,
                 Topics.ENRICHED_MESSAGE_INPUT,
                 Topics.THINK_REQUEST_RESPONSE,
                 Topics.TOOL_USE,

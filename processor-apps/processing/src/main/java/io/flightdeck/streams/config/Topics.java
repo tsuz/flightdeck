@@ -28,6 +28,15 @@ public final class Topics {
     /** Per-session accumulated conversation history (KTable backing store) */
     public static final String SESSION_CONTEXT           = PREFIX + "session-context";
 
+    /**
+     * Admission-controlled user/tool messages: {@code message-input} records that
+     * have passed the {@code SessionConcurrencyGuardProcessor}. A new user message
+     * for a session whose previous turn is still in progress is rejected here
+     * (never reaching enrichment), so the LLM never receives a {@code tool_use}
+     * block that is not immediately followed by its {@code tool_result}.
+     */
+    public static final String ADMITTED_MESSAGE_INPUT   = PREFIX + "admitted-message-input";
+
     /** Merged: historical context + latest user message, ready for the LLM */
     public static final String ENRICHED_MESSAGE_INPUT   = PREFIX + "enriched-message-input";
 

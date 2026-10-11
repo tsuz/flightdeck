@@ -1,0 +1,51 @@
+[
+  {
+    "name": "lookup_expense",
+    "description": "Look up an expense report by ID or by the most recent submissions for a user. Returns amount, status, approver, and submission/payment dates.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "expense_id": { "type": "string", "description": "Specific expense ID, e.g. 'EXP-2026-0421'" },
+        "username": { "type": "string", "description": "Look up most recent expenses for this user (used if expense_id not provided)" }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "get_reimbursement_status",
+    "description": "Get the status of a user's pending reimbursements — total amount owed, expected payment date, and any blocking issues.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "corporate_card_info",
+    "description": "Get the status of a user's corporate card — active, suspended, lost, current month spend, and limit.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The employee's username" }
+      },
+      "required": ["username"]
+    }
+  },
+  {
+    "name": "lookup_expense_policy",
+    "description": "Look up the company expense policy for a given category (meals, travel, software, conferences). Returns reimbursable limits and required documentation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["meals", "travel", "software", "conferences", "coworking"],
+          "description": "Expense category"
+        }
+      },
+      "required": ["category"]
+    }
+  }
+]

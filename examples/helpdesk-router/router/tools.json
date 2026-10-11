@@ -1,0 +1,21 @@
+[
+  {
+    "name": "route_to",
+    "description": "Forward the user's question to exactly ONE specialist agent and return their answer. Choose the specialist whose domain best matches the request.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "specialist": {
+          "type": "string",
+          "enum": ["it", "hr", "facilities", "finance"],
+          "description": "Which specialist to route to: 'it' (IT Support — laptops, wifi, VPN, accounts, software), 'hr' (HR — PTO, benefits, leave, policies), 'facilities' (Facilities — rooms, AC, badges, parking, building issues), 'finance' (Finance & Expenses — reimbursements, corporate cards, expense reports)"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question to forward, rephrased clearly if needed but preserving the user's original intent"
+        }
+      },
+      "required": ["specialist", "question"]
+    }
+  }
+]
